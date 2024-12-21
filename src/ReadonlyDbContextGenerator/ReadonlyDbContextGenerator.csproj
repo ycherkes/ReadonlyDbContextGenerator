@@ -16,6 +16,7 @@
 		<PackageTags>readonly dbcontext replica</PackageTags>
 		<PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
 		<PackageRequireLicenseAcceptance>True</PackageRequireLicenseAcceptance>
+		<Authors>Yevhen Cherkes</Authors>
 	</PropertyGroup>
 
 	<ItemGroup>
