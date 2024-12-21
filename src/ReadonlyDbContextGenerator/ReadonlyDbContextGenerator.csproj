@@ -10,6 +10,12 @@
 		<Description>Creates read-only versions of EF Core DbContext and entities. It ensures that the generated DbContext and entities prevent modifications, making them suitable for read-only operations in applications.</Description>
 		<Copyright>Yevhen Cherkes 2024</Copyright>
 		<PackageReadmeFile>Readme.md</PackageReadmeFile>
+		<PackageProjectUrl>https://github.com/ycherkes/ReadonlyDbContextGenerator</PackageProjectUrl>
+		<RepositoryUrl>https://github.com/ycherkes/ReadonlyDbContextGenerator</RepositoryUrl>
+		<RepositoryType>git</RepositoryType>
+		<PackageTags>readonly dbcontext replica</PackageTags>
+		<PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
+		<PackageRequireLicenseAcceptance>True</PackageRequireLicenseAcceptance>
 	</PropertyGroup>
 
 	<ItemGroup>
