@@ -118,3 +118,9 @@ public interface IReadOnlyMyDbContext : IDisposable, IAsyncDisposable
     IReadOnlyCollection<ReadOnlyOrder> Orders { get; }
 }
 ```
+
+## Contributing
+
+Contributions are welcome! Please submit issues or pull requests on the [ReadonlyDbContextGenerator](https://github.com/ycherkes/ReadonlyDbContextGenerator).
+
+We welcome ideas, bug reports, and feature suggestions from the community!
