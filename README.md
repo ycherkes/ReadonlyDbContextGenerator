@@ -33,7 +33,7 @@ The `ReadOnlyDbContextGenerator` is a C# source generator that creates read-only
 1. Add the source generator to your project:
 
    ```bash
-   dotnet add package ReadOnlyEfCoreGenerator
+   dotnet add package ReadonlyDbContextGenerator
    ```
 
 2. Build your project. The generator will create source files for the read-only components.
