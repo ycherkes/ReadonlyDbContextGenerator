@@ -1,0 +1,10 @@
+{
+  "profiles": {
+    "ReadonlyDbContextGenerator": {
+      "commandName": "Executable",
+      "executablePath": "C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\MSBuild\\Current\\Bin\\Roslyn\\csc.exe",
+      "commandLineArgs": "@C:\\Temp\\myresponsefile.rsp",
+      "workingDirectory": "D:\\Work\\Semine.PurchaseOrder\\Semine.PurchaseOrder"
+    }
+  }
+}
