@@ -80,8 +80,8 @@ public class Order
 ```csharp
 public class ReadOnlyMyDbContext : IReadOnlyMyDbContext
 {
-    public IReadOnlyCollection<User> Users { get; }
-    public IReadOnlyCollection<Order> Orders { get; }
+    public DbSet<User> Users { get; }
+    public DbSet<Order> Orders { get; }
 
     public int SaveChanges()
     {
@@ -114,8 +114,8 @@ public class ReadOnlyOrder
 ```csharp
 public interface IReadOnlyMyDbContext : IDisposable, IAsyncDisposable
 {
-    IReadOnlyCollection<ReadOnlyUser> Users { get; }
-    IReadOnlyCollection<ReadOnlyOrder> Orders { get; }
+    DbSet<ReadOnlyUser> Users { get; }
+    DbSet<ReadOnlyOrder> Orders { get; }
 }
 ```
 
