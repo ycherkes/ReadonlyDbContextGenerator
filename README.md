@@ -6,18 +6,6 @@
 
 The `ReadOnlyDbContextGenerator` is a C# source generator that creates read-only versions of EF Core DbContext and entities. It ensures that the generated DbContext and entities prevent modifications, making them suitable for read-only operations in applications.
 
-## Features
-
-- Generates a read-only twin of the DbContext class:
-  - Strips out save methods (`SaveChanges`, `SaveChangesAsync`, etc.).
-  - Throws `NotImplementedException` for methods that modify data.
-- Generates read-only versions of entities:
-  - Converts properties to `init`-only.
-  - Replaces navigation collections with `IReadOnlyCollection`.
-  - Ensures navigation properties use read-only entity types.
-- Supports generating entity configuration classes for the read-only entities.
-- Generates an `IReadOnlyDbContext` interface for abstraction.
-
 ## How It Works
 
 1. **DbContext Analysis**
