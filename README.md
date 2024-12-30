@@ -80,8 +80,8 @@ public class Order
 ```csharp
 public class ReadOnlyMyDbContext : IReadOnlyMyDbContext
 {
-    public DbSet<User> Users { get; }
-    public DbSet<Order> Orders { get; }
+    public DbSet<ReadOnlyUser> Users { get; }
+    public DbSet<ReadOnlyOrder> Orders { get; }
 
     public int SaveChanges()
     {
