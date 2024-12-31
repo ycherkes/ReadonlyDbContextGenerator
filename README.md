@@ -33,7 +33,7 @@ The `ReadOnlyDbContextGenerator` is a C# source generator that creates read-only
 1. Add the source generator to your project:
 
    ```bash
-   dotnet add package ReadOnlyEfCoreGenerator
+   dotnet add package ReadonlyDbContextGenerator
    ```
 
 2. Build your project. The generator will create source files for the read-only components.
@@ -80,8 +80,8 @@ public class Order
 ```csharp
 public partial class ReadOnlyMyDbContext : IReadOnlyMyDbContext
 {
-    public IReadOnlyCollection<ReadOnlyUser> Users { get; }
-    public IReadOnlyCollection<ReadOnlyOrder> Orders { get; }
+    public DbSet<ReadOnlyUser> Users { get; }
+    public DbSet<ReadOnlyOrder> Orders { get; }
 
     public int SaveChanges()
     {
@@ -114,8 +114,8 @@ public class ReadOnlyOrder
 ```csharp
 public partial interface IReadOnlyMyDbContext : IDisposable, IAsyncDisposable
 {
-    IReadOnlyCollection<ReadOnlyUser> Users { get; }
-    IReadOnlyCollection<ReadOnlyOrder> Orders { get; }
+    DbSet<ReadOnlyUser> Users { get; }
+    DbSet<ReadOnlyOrder> Orders { get; }
     DbSet<TEntity> Set<TEntity>() where TEntity : class;
 }
 ```
