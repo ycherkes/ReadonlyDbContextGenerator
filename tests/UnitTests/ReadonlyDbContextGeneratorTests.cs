@@ -22,6 +22,16 @@ public class ReadonlyDbContextGeneratorTests
                                   public int Id { get; set; }
                                   public string Name { get; set; }
                                   public ICollection<Order> Orders { get; set; }
+                                  
+                                  public static User Create(int id, string name, ICollection<Order> orders)
+                                  {
+                                      return new User
+                                      {
+                                          Id = id,
+                                          Name = name,
+                                          Orders = orders
+                                      };
+                                  }
                               }
                           
                               public class Order
@@ -83,7 +93,7 @@ public class ReadonlyDbContextGeneratorTests
                                               
                                               namespace MyApp.Entities.Generated
                                               {
-                                                  public class ReadOnlyMyDbContext : DbContext, IReadOnlyMyDbContext
+                                                  public partial class ReadOnlyMyDbContext : DbContext, IReadOnlyMyDbContext
                                                   {
                                                       public DbSet<ReadOnlyUser> Users { get; set; }
                                               
@@ -101,11 +111,6 @@ public class ReadonlyDbContextGeneratorTests
                                                       {
                                                           throw new NotImplementedException("Do not call SaveChangesAsync on a readonly db context.");
                                                       }
-                                              
-                                                      public sealed override DbSet<TEntity> Set<TEntity>()
-                                                      {
-                                                          throw new NotImplementedException("Do not call Set on a readonly db context.");
-                                                      }
                                                   }
                                               }
                                               """;
@@ -119,9 +124,12 @@ public class ReadonlyDbContextGeneratorTests
                                                
                                                namespace MyApp.Entities.Generated
                                                {
-                                                   public interface IReadOnlyMyDbContext : IDisposable, IAsyncDisposable
+                                                   public partial interface IReadOnlyMyDbContext : IDisposable, IAsyncDisposable
                                                    {
                                                        DbSet<ReadOnlyUser> Users { get; }
+
+                                                       DbSet<TEntity> Set<TEntity>()
+                                                           where TEntity : class;
                                                    }
                                                }
                                                """;
