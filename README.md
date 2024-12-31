@@ -1,10 +1,11 @@
 [![Stand With Ukraine](https://raw.githubusercontent.com/vshymanskyy/StandWithUkraine/main/banner2-direct.svg)](https://stand-with-ukraine.pp.ua)
 
 # ReadOnly DbContext Source Generator
+[![NuGet version (ReadOnlyDbContextGenerator)](https://img.shields.io/nuget/v/ReadOnlyDbContextGenerator.svg?style=flat-square)](https://www.nuget.org/packages/ReadOnlyDbContextGenerator/)
 
 ## Overview
 
-The `ReadOnlyDbContextGenerator` is a C# source generator that creates read-only versions of EF Core DbContext and entities. It ensures that the generated DbContext and entities prevent modifications, making them suitable for read-only operations in applications.
+The `ReadOnlyDbContextGenerator` is a C# source generator that creates read-only versions of EF Core DbContext and entities.
 
 ## How It Works
 
@@ -78,7 +79,7 @@ public class Order
 
 #### ReadOnlyMyDbContext
 ```csharp
-public class ReadOnlyMyDbContext : IReadOnlyMyDbContext
+public partial class ReadOnlyMyDbContext : IReadOnlyMyDbContext
 {
     public DbSet<ReadOnlyUser> Users { get; }
     public DbSet<ReadOnlyOrder> Orders { get; }
@@ -112,10 +113,11 @@ public class ReadOnlyOrder
 
 #### IReadOnlyMyDbContext
 ```csharp
-public interface IReadOnlyMyDbContext : IDisposable, IAsyncDisposable
+public partial interface IReadOnlyMyDbContext : IDisposable, IAsyncDisposable
 {
     DbSet<ReadOnlyUser> Users { get; }
     DbSet<ReadOnlyOrder> Orders { get; }
+    DbSet<TEntity> Set<TEntity>() where TEntity : class;
 }
 ```
 

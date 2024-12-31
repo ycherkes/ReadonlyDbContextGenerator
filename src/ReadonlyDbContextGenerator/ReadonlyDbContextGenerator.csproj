@@ -5,10 +5,10 @@
 		<IncludeBuildOutput>false</IncludeBuildOutput>
 		<EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
 		<LangVersion>latest</LangVersion>
-		<Version>0.0.1</Version>
+		<Version>0.0.2</Version>
 		<Title>Readonly DbContext Generator</Title>
-		<Description>Creates read-only versions of EF Core DbContext and entities. It ensures that the generated DbContext and entities prevent modifications, making them suitable for read-only operations in applications.</Description>
-		<Copyright>Yevhen Cherkes 2024</Copyright>
+		<Description>Creates read-only twins of EF Core DbContext and entities.</Description>
+		<Copyright>Yevhen Cherkes 2024-2025</Copyright>
 		<PackageReadmeFile>Readme.md</PackageReadmeFile>
 		<PackageProjectUrl>https://github.com/ycherkes/ReadonlyDbContextGenerator</PackageProjectUrl>
 		<RepositoryUrl>https://github.com/ycherkes/ReadonlyDbContextGenerator</RepositoryUrl>

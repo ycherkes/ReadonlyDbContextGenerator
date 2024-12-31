@@ -45,7 +45,7 @@ public class CodeGenerator
             info.DbContext.Namespace?.ToString()
         };
 
-        allNamespaces.AddRange(info.Entities.Select(e => GetNamespace(e.SyntaxNode).Name?.ToString()));
+        allNamespaces.AddRange(info.Entities.Select(e => GetNamespace(e.SyntaxNode)?.Name.ToString()));
         allNamespaces.AddRange(info.Configurations.Select(c => GetNamespace(c.SyntaxNode)?.Name.ToString()));
         var distinctNamespaces = allNamespaces.Where(n => n != null).Distinct().ToArray();
 
@@ -191,7 +191,10 @@ public class CodeGenerator
                 return member; // Leave unchanged if not a property
             });
 
-        // Update the class name to prepend "ReadOnly"
+        // Remove methods from the entity (DDD approach often use them in domain rich model)
+        modifiedMembers = modifiedMembers.Where(m => m is not MethodDeclarationSyntax);
+
+        // Update the class name to append "ReadOnly"
         var readonlyClassName = GetReadonlyTypeName(entity.SyntaxNode.Identifier.Text);
         var newIdentifier = SyntaxFactory.Identifier(readonlyClassName);
 
@@ -433,10 +436,7 @@ public class CodeGenerator
         var baseList = dbContextSyntax.BaseList ?? SyntaxFactory.BaseList();
         var readonlyDbContextIdentifier = GetReadonlyTypeName(dbContext.Identifier.Text);
         var newBaseList = baseList.AddTypes(SyntaxFactory.SimpleBaseType(SyntaxFactory.ParseTypeName($"I{readonlyDbContextIdentifier}")));
-
         
-
-        // Create a new class declaration with the updated name, members, and base list
         var sm = compilation.GetSemanticModel(dbContextSyntax.SyntaxTree);
 
         var typeReferenceRewriter = new TypeReferenceRewriter(types, sm);
@@ -444,16 +444,15 @@ public class CodeGenerator
         var newDbContextSyntax = (ClassDeclarationSyntax)typeReferenceRewriter.Visit(dbContextSyntax);
 
         var withoutSaveMethods = newDbContextSyntax.Members
-            .Where(member => member is not MethodDeclarationSyntax { Identifier.Text: "SaveChanges" or "SaveChangesAsync" or "Set" });
+            .Where(member => member is not MethodDeclarationSyntax { Identifier.Text: "SaveChanges" or "SaveChangesAsync"});
 
         var newMethods = GetReadonlyDbContextMethods();
 
         var allMembers = withoutSaveMethods.Concat(newMethods).ToArray();
 
-        // Update the class name to prepend "ReadOnly"
         var newIdentifier = SyntaxFactory.Identifier(readonlyDbContextIdentifier);
 
-        newDbContextSyntax = newDbContextSyntax
+        newDbContextSyntax = AddPartialKeyword(newDbContextSyntax)
             .WithIdentifier(newIdentifier)
             .WithMembers(SyntaxFactory.List(allMembers))
             .WithBaseList(newBaseList);
@@ -472,6 +471,18 @@ public class CodeGenerator
 
         // Return the modified DbContext code and the DbSet property strings
         return compilationUnit;
+    }
+
+    private static ClassDeclarationSyntax AddPartialKeyword(ClassDeclarationSyntax classDeclaration)
+    {
+        if (!classDeclaration.Modifiers.Any(SyntaxKind.PartialKeyword))
+        {
+            // Add the partial modifier
+            classDeclaration = classDeclaration
+                .AddModifiers(SyntaxFactory.Token(SyntaxKind.PartialKeyword));
+        }
+
+        return classDeclaration;
     }
 
     public static IEnumerable<MemberDeclarationSyntax> GetReadonlyDbContextMethods()
@@ -495,10 +506,6 @@ public class CodeGenerator
             @"public sealed override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
               {
                   throw new NotImplementedException(""Do not call SaveChangesAsync on a readonly db context."");
-              }",
-            @"public sealed override DbSet<TEntity> Set<TEntity>()
-              {
-                  throw new NotImplementedException(""Do not call Set on a readonly db context."");
               }"
         };
 
@@ -526,7 +533,12 @@ public class CodeGenerator
                     .WithAccessorList(accessorList)
                     .WithModifiers(SyntaxFactory.TokenList()); // Remove modifiers like `public`
             })
-            .Cast<MemberDeclarationSyntax>();
+            .Cast<MemberDeclarationSyntax>()
+            .ToList();
+
+        const string setMethodText = "DbSet<TEntity> Set<TEntity>() where TEntity : class;";
+        var setMethod = SyntaxFactory.ParseMemberDeclaration(setMethodText)!.NormalizeWhitespace();
+        interfaceMembers.Add(setMethod);
 
         var newBaseList = SyntaxFactory.BaseList(SyntaxFactory.SeparatedList(
         [
@@ -536,7 +548,7 @@ public class CodeGenerator
 
         // Create the interface declaration
         var interfaceDeclaration = SyntaxFactory.InterfaceDeclaration(interfaceName)
-            .AddModifiers(SyntaxFactory.Token(SyntaxKind.PublicKeyword))
+            .AddModifiers(SyntaxFactory.Token(SyntaxKind.PublicKeyword), SyntaxFactory.Token(SyntaxKind.PartialKeyword))
             .WithBaseList(newBaseList)
             .AddMembers(interfaceMembers.ToArray());
 
