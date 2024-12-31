@@ -1,6 +1,7 @@
 [![Stand With Ukraine](https://raw.githubusercontent.com/vshymanskyy/StandWithUkraine/main/banner2-direct.svg)](https://stand-with-ukraine.pp.ua)
 
 # ReadOnly DbContext Source Generator
+[![NuGet version (ReadOnlyDbContextGenerator)](https://img.shields.io/nuget/v/ReadOnlyDbContextGenerator.svg?style=flat-square)](https://www.nuget.org/packages/ReadOnlyDbContextGenerator/)
 
 ## Overview
 
