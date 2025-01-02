@@ -60,12 +60,14 @@ public class ReadonlyDbContextGeneratorTests
                                              public class ReadOnlyUser
                                              {
                                                  public int Id { get; init; }
+
                                                  public string Name { get; init; }
+
                                                  public IReadOnlyCollection<ReadOnlyOrder> Orders { get; init; }
                                              }
                                          }
                                          """;
-        
+
         var expectedOrderReadOnlySource = """
                                          using Microsoft.EntityFrameworkCore;
                                          using MyApp.Entities;
@@ -77,6 +79,7 @@ public class ReadonlyDbContextGeneratorTests
                                              public class ReadOnlyOrder
                                              {
                                                  public int Id { get; init; }
+
                                                  public string Description { get; init; }
                                              }
                                          }
