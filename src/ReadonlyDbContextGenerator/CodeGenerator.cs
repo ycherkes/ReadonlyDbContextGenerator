@@ -435,6 +435,7 @@ public class CodeGenerator
         // Add the IReadOnlyDbContext interface to the BaseList
         var baseList = dbContextSyntax.BaseList ?? SyntaxFactory.BaseList();
         var readonlyDbContextIdentifier = GetReadonlyTypeName(dbContext.Identifier.Text);
+        var readonlyDbContextInterfaceName = $"I{readonlyDbContextIdentifier}";
         var newBaseList = baseList.AddTypes(SyntaxFactory.SimpleBaseType(SyntaxFactory.ParseTypeName($"I{readonlyDbContextIdentifier}")));
         
         var sm = compilation.GetSemanticModel(dbContextSyntax.SyntaxTree);
@@ -448,16 +449,45 @@ public class CodeGenerator
 
         var newMethods = GetReadonlyDbContextMethods();
 
-        var allMembers = withoutSaveMethods.Concat(newMethods).ToArray();
+        var allMembers = withoutSaveMethods.Concat(newMethods).ToList();
 
         var newIdentifier = SyntaxFactory.Identifier(readonlyDbContextIdentifier);
+
+        var interfaceMembers = newDbContextSyntax.Members
+            .OfType<PropertyDeclarationSyntax>()
+            .Where(prop => dbContext.Entities.Any(e => e.DbSetProperty == prop.Identifier.Text))
+            .Select(property =>
+            {
+                var queryableType = SyntaxFactory.GenericName(SyntaxFactory.Identifier("IQueryable"))
+                    .WithTypeArgumentList(((GenericNameSyntax)property.Type).TypeArgumentList);
+
+                var explicitInterfaceSpecifier = SyntaxFactory.ExplicitInterfaceSpecifier(
+                    SyntaxFactory.IdentifierName(readonlyDbContextInterfaceName)
+                );
+
+                return property
+                    .WithType(queryableType)
+                    .WithExplicitInterfaceSpecifier(explicitInterfaceSpecifier)
+                    .WithAccessorList(null)
+                    .WithModifiers(SyntaxFactory.TokenList())
+                    .WithExpressionBody(SyntaxFactory.ArrowExpressionClause(SyntaxFactory.IdentifierName(property.Identifier)))
+                    .WithSemicolonToken(SyntaxFactory.Token(SyntaxKind.SemicolonToken));
+            })
+            .Cast<MemberDeclarationSyntax>()
+            .ToList();
+
+        var setMethodText = $"IQueryable<TEntity> {readonlyDbContextInterfaceName}.Set<TEntity>() where TEntity : class => Set<TEntity>();";
+        var setMethod = SyntaxFactory.ParseMemberDeclaration(setMethodText)!.NormalizeWhitespace();
+        interfaceMembers.Add(setMethod);
+
+        allMembers.AddRange(interfaceMembers);
 
         newDbContextSyntax = AddPartialKeyword(newDbContextSyntax)
             .WithIdentifier(newIdentifier)
             .WithMembers(SyntaxFactory.List(allMembers))
             .WithBaseList(newBaseList);
 
-        string[] requiredUsings = ["Microsoft.EntityFrameworkCore", "System.Threading", "System.Threading.Tasks", "System"];
+        string[] requiredUsings = ["Microsoft.EntityFrameworkCore", "System.Threading", "System.Threading.Tasks", "System", "System.Linq"];
         var combinedUsings = CombineUsings(dbContextSyntax, requiredUsings).ToArray();
 
         var namespaceDeclaration = SyntaxFactory.NamespaceDeclaration(SyntaxFactory.ParseName(commonNamespace))
@@ -469,7 +499,6 @@ public class CodeGenerator
             .AddUsings(combinedUsings)
             .AddMembers(namespaceDeclaration);
 
-        // Return the modified DbContext code and the DbSet property strings
         return compilationUnit;
     }
 
@@ -521,7 +550,7 @@ public class CodeGenerator
 
         var interfaceMembers = classDeclaration.Members
             .OfType<PropertyDeclarationSyntax>()
-            .Where(prop => dbContext.Entities.Any(e => e.DbSetProperty == prop.Identifier.Text))
+            .Where(prop => dbContext.Entities.Any(e => e.DbSetProperty == prop.Identifier.Text && prop.Type is GenericNameSyntax { Identifier.Text: "DbSet" }))
             .Select(property =>
             {
                 // Create a read-only version of the property
@@ -529,14 +558,19 @@ public class CodeGenerator
                     .WithSemicolonToken(SyntaxFactory.Token(SyntaxKind.SemicolonToken));
                 var accessorList = SyntaxFactory.AccessorList(SyntaxFactory.SingletonList(getAccessor));
 
+                var queryableType = SyntaxFactory.GenericName(
+                        SyntaxFactory.Identifier("IQueryable"))
+                    .WithTypeArgumentList(((GenericNameSyntax)property.Type).TypeArgumentList);
+
                 return property
+                    .WithType(queryableType)
                     .WithAccessorList(accessorList)
                     .WithModifiers(SyntaxFactory.TokenList()); // Remove modifiers like `public`
             })
             .Cast<MemberDeclarationSyntax>()
             .ToList();
 
-        const string setMethodText = "DbSet<TEntity> Set<TEntity>() where TEntity : class;";
+        const string setMethodText = "IQueryable<TEntity> Set<TEntity>() where TEntity : class;";
         var setMethod = SyntaxFactory.ParseMemberDeclaration(setMethodText)!.NormalizeWhitespace();
         interfaceMembers.Add(setMethod);
 
@@ -557,7 +591,7 @@ public class CodeGenerator
             .AddMembers(interfaceDeclaration)
             .NormalizeWhitespace();
 
-        var combinedUsings = CombineUsings(dbContext.SyntaxNode, ["Microsoft.EntityFrameworkCore", "System"]);
+        var combinedUsings = CombineUsings(dbContext.SyntaxNode, ["Microsoft.EntityFrameworkCore", "System", "System.Linq"]);
 
         var compilationUnit = SyntaxFactory.CompilationUnit()
             .AddUsings(combinedUsings.ToArray())

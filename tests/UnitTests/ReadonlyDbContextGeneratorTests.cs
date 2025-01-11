@@ -91,6 +91,7 @@ public class ReadonlyDbContextGeneratorTests
                                               using MyApp.Entities;
                                               using System;
                                               using System.Collections.Generic;
+                                              using System.Linq;
                                               using System.Threading;
                                               using System.Threading.Tasks;
                                               
@@ -114,6 +115,10 @@ public class ReadonlyDbContextGeneratorTests
                                                       {
                                                           throw new NotImplementedException("Do not call SaveChangesAsync on a readonly db context.");
                                                       }
+                                              
+                                                      IQueryable<ReadOnlyUser> IReadOnlyMyDbContext.Users => Users;
+                                                      IQueryable<TEntity> IReadOnlyMyDbContext.Set<TEntity>()
+                                                          where TEntity : class => Set<TEntity>();
                                                   }
                                               }
                                               """;
@@ -124,14 +129,15 @@ public class ReadonlyDbContextGeneratorTests
                                                using MyApp.Entities;
                                                using System;
                                                using System.Collections.Generic;
+                                               using System.Linq;
                                                
                                                namespace MyApp.Entities.Generated
                                                {
                                                    public partial interface IReadOnlyMyDbContext : IDisposable, IAsyncDisposable
                                                    {
-                                                       DbSet<ReadOnlyUser> Users { get; }
-
-                                                       DbSet<TEntity> Set<TEntity>()
+                                                       IQueryable<ReadOnlyUser> Users { get; }
+                                               
+                                                       IQueryable<TEntity> Set<TEntity>()
                                                            where TEntity : class;
                                                    }
                                                }
