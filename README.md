@@ -88,6 +88,11 @@ public partial class ReadOnlyMyDbContext : IReadOnlyMyDbContext
     {
         throw new NotImplementedException("Read-only context");
     }
+
+    IQueryable<ReadOnlyUser> IReadOnlyMyDbContext.Users => Users;
+    IQueryable<ReadOnlyOrder> IReadOnlyMyDbContext.Orders => Orders;
+    IQueryable<TEntity> IReadOnlyMyDbContext.Set<TEntity>()
+        where TEntity : class => Set<TEntity>();
 }
 ```
 
@@ -115,9 +120,9 @@ public class ReadOnlyOrder
 ```csharp
 public partial interface IReadOnlyMyDbContext : IDisposable, IAsyncDisposable
 {
-    DbSet<ReadOnlyUser> Users { get; }
-    DbSet<ReadOnlyOrder> Orders { get; }
-    DbSet<TEntity> Set<TEntity>() where TEntity : class;
+    IQueryable<ReadOnlyUser> Users { get; }
+    IQueryable<ReadOnlyOrder> Orders { get; }
+    IQueryable<TEntity> Set<TEntity>() where TEntity : class;
 }
 ```
 
