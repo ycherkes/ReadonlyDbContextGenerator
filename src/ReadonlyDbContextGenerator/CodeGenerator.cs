@@ -1,12 +1,12 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Collections.Immutable;
-using System.Linq;
-using Microsoft.CodeAnalysis;
+﻿using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using ReadonlyDbContextGenerator.Helpers;
 using ReadonlyDbContextGenerator.Model;
+using System;
+using System.Collections.Generic;
+using System.Collections.Immutable;
+using System.Linq;
 
 namespace ReadonlyDbContextGenerator;
 
@@ -45,7 +45,7 @@ public class CodeGenerator
             info.DbContext.Namespace?.ToString()
         };
 
-        allNamespaces.AddRange(info.Entities.Select(e => GetNamespace(e.SyntaxNode)?.Name.ToString()));
+        allNamespaces.AddRange(info.DbContext.Entities.Select(e => GetNamespace(e.SyntaxNode)?.Name.ToString()));
         allNamespaces.AddRange(info.Configurations.Select(c => GetNamespace(c.SyntaxNode)?.Name.ToString()));
         var distinctNamespaces = allNamespaces.Where(n => n != null).Distinct().ToArray();
 
@@ -83,14 +83,14 @@ public class CodeGenerator
         var processedEntities = new HashSet<string>();
         var additionalEntitiesToProcess = new List<EntityInfo>();
 
-        foreach (var entity in info.Entities)
+        foreach (var entity in info.DbContext.Entities)
         {
             if (processedEntities.Contains(entity.SyntaxNode.Identifier.Text))
             {
                 continue;
             }
 
-            var readOnlyEntityCode = ModifyEntitySyntax(entity, entity.SyntaxNode!, processedEntities, info.Entities, additionalEntitiesToProcess, info.Compilation, commonNamespace);
+            var readOnlyEntityCode = ModifyEntitySyntax(entity, entity.SyntaxNode!, processedEntities, info.DbContext.Entities, additionalEntitiesToProcess, info.Compilation, commonNamespace);
             var readonlyFileName = GetReadonlyTypeName(entity.SyntaxNode.Identifier.Text);
             context.AddSource($"{readonlyFileName}.g.cs", readOnlyEntityCode);
         }
@@ -104,7 +104,7 @@ public class CodeGenerator
             {
                 if (!processedEntities.Contains(entity.SyntaxNode.Identifier.Text))
                 {
-                    var readOnlyEntityCode = ModifyEntitySyntax(entity, entity.SyntaxNode!, processedEntities, info.Entities, additionalEntitiesToProcess, info.Compilation, commonNamespace);
+                    var readOnlyEntityCode = ModifyEntitySyntax(entity, entity.SyntaxNode!, processedEntities, info.DbContext.Entities, additionalEntitiesToProcess, info.Compilation, commonNamespace);
                     var readonlyFileName = GetReadonlyTypeName(entity.SyntaxNode.Identifier.Text);
                     context.AddSource($"{readonlyFileName}.g.cs", readOnlyEntityCode);
                 }
@@ -117,15 +117,15 @@ public class CodeGenerator
     private static string ModifyEntitySyntax(EntityInfo entity,
         ClassDeclarationSyntax entitySyntax,
         HashSet<string> processedEntities,
-        ImmutableArray<EntityInfo> allEntities,
+        IReadOnlyList<EntityInfo> allEntities,
         List<EntityInfo> additionalEntitiesToProcess,
-        Compilation compilation, 
+        Compilation compilation,
         string commonNamespace)
     {
-        
+
         processedEntities.Add(entity.SyntaxNode.Identifier.Text);
         var sm = compilation.GetSemanticModel(entitySyntax.SyntaxTree);
-        
+
         // Convert properties to init-only and navigation properties to IReadOnlyCollection<ReadOnlyEntity>
         var modifiedMembers = entitySyntax.Members
             .Select(member =>
@@ -214,7 +214,7 @@ public class CodeGenerator
 
                 if (existingAdditionalEntity == null)
                 {
-                    
+
                     var referencedEntityClass = SyntaxHelper.FindEntityClass(type, compilation);
                     if (referencedEntityClass == null) continue;
 
@@ -249,10 +249,10 @@ public class CodeGenerator
         var oldUsings = GetCompilationUnit(entitySyntax).Usings;
         var entityNameSpace = GetNamespace(entitySyntax)?.Name.ToString();
 
-        var usings = entityNameSpace == null 
-            ? requiredUsings 
+        var usings = entityNameSpace == null
+            ? requiredUsings
             : requiredUsings.Concat([entityNameSpace]);
-        
+
         var missingUsings = usings
             .Where(u => oldUsings.All(existing => existing.Name != null && existing.Name.ToString() != u))
             .Select(u => SyntaxFactory.UsingDirective(SyntaxFactory.ParseName(u)))
@@ -369,7 +369,7 @@ public class CodeGenerator
 
         public override SyntaxNode VisitGenericName(GenericNameSyntax node)
         {
-            
+
 
             // Check if the generic type matches the old class name
             var updatedArguments = node.TypeArgumentList.Arguments
@@ -437,15 +437,15 @@ public class CodeGenerator
         var readonlyDbContextIdentifier = GetReadonlyTypeName(dbContext.Identifier.Text);
         var readonlyDbContextInterfaceName = $"I{readonlyDbContextIdentifier}";
         var newBaseList = baseList.AddTypes(SyntaxFactory.SimpleBaseType(SyntaxFactory.ParseTypeName($"I{readonlyDbContextIdentifier}")));
-        
+
         var sm = compilation.GetSemanticModel(dbContextSyntax.SyntaxTree);
 
         var typeReferenceRewriter = new TypeReferenceRewriter(types, sm);
-        
+
         var newDbContextSyntax = (ClassDeclarationSyntax)typeReferenceRewriter.Visit(dbContextSyntax);
 
         var withoutSaveMethods = newDbContextSyntax.Members
-            .Where(member => member is not MethodDeclarationSyntax { Identifier.Text: "SaveChanges" or "SaveChangesAsync"});
+            .Where(member => member is not MethodDeclarationSyntax { Identifier.Text: "SaveChanges" or "SaveChangesAsync" });
 
         var newMethods = GetReadonlyDbContextMethods();
 
@@ -613,7 +613,7 @@ public class CodeGenerator
             .ToImmutableHashSet();
 
         var typeReferenceRewriter = new TypeReferenceRewriter(entityTypes, sm);
-        
+
         var newConfigSyntax = (ClassDeclarationSyntax)typeReferenceRewriter.Visit(configSyntax);
 
         // Update class declaration with new base type
