@@ -53,9 +53,6 @@ public class ReadOnlyDbContextGenerator : IIncrementalGenerator
             {
                 var (dbContext, compilationInfo) = combined.Left;
 
-                //Debugger.Launch();
-                //Debugger.Launch();
-
                 var configs = combined.Right.GroupBy(x => x.EntityType, SymbolEqualityComparer.Default)
                     .Select(g => g.First())
                     .Where(c => dbContext.EntityTypes.Contains(c.EntityType))
