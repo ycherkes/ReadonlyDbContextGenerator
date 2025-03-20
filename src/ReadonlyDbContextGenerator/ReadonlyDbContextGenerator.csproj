@@ -6,7 +6,7 @@
 		<IsRoslynComponent>true</IsRoslynComponent>
 		<EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
 		<LangVersion>latest</LangVersion>
-		<Version>0.0.5</Version>
+		<Version>0.0.6</Version>
 		<Title>Readonly DbContext Generator</Title>
 		<Description>Creates read-only twins of EF Core DbContext and entities.</Description>
 		<Copyright>Yevhen Cherkes 2024-2025</Copyright>

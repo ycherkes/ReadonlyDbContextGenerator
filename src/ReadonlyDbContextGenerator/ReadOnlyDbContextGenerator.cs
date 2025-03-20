@@ -1,9 +1,9 @@
-﻿using System.Collections.Immutable;
-using System.Linq;
-using Microsoft.CodeAnalysis;
+﻿using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using ReadonlyDbContextGenerator.Helpers;
 using ReadonlyDbContextGenerator.Model;
+using System.Collections.Immutable;
+using System.Linq;
 
 namespace ReadonlyDbContextGenerator;
 
@@ -36,37 +36,32 @@ public class ReadOnlyDbContextGenerator : IIncrementalGenerator
             })
             .Where(x => x.DbContextInfo != null);
 
-        var entities = dbContextProviders
-            .SelectMany((pair, _) =>
-            {
-                var (dbContext, compilationInfo) = pair;
-                return dbContext.Entities.Select(entity => ExtractEntityInfo(entity.Type));
-            })
-            .Where(ei => ei != null);
-
         var entityConfigs = classesWithBaseListAndCompilation
             .Select(static (pair, _) =>
             {
                 var (classDecl, compilationInfo) = pair;
 
-                return compilationInfo.DbContextSymbol == null 
-                    ? null 
+                return compilationInfo.DbContextSymbol == null
+                    ? null
                     : ExtractEntityConfigInfo(classDecl, compilationInfo);
             })
             .Where(eci => eci != null);
 
-        var aggregatedInfo = dbContextProviders
-            .Combine(entities.Collect())
+        var aggregatedInfo = dbContextProviders.Collect()
             .Combine(entityConfigs.Collect())
             .Select(static (combined, _) =>
             {
-                var ((dbContext, compilationInfo), entities) = combined.Left;
+                var dbContexts = combined.Left.Select(x => x.DbContextInfo).ToImmutableArray();
+
+                var compilationInfo = combined.Left.Select(x => x.CompilationInfo).FirstOrDefault();
 
                 var configs = combined.Right.GroupBy(x => x.EntityType, SymbolEqualityComparer.Default)
                     .Select(g => g.First())
                     .ToImmutableArray();
 
-                return new AggregatedInfo(dbContext!, entities, configs, compilationInfo.Compilation);
+                var aggregatedEntities = dbContexts.SelectMany(db => db.Entities).ToImmutableArray();
+
+                return new AggregatedInfo(dbContexts!, configs, aggregatedEntities, compilationInfo!.Compilation);
             });
 
         context.RegisterSourceOutput(aggregatedInfo, CodeGenerator.GenerateReadOnlyCode);
@@ -111,11 +106,19 @@ public class ReadOnlyDbContextGenerator : IIncrementalGenerator
             .Select(prop =>
             {
                 var entityType = ((INamedTypeSymbol)prop.Type).TypeArguments[0];
-                return new EntityInfo
+                var ei = ExtractEntityInfo(entityType);
+
+                if (ei != null)
                 {
-                    Type = entityType,
-                    DbSetProperty = prop.Name
-                };
+                    ei.DbSetProperty = prop.Name;
+                }
+
+                return ei;
+                //return new EntityInfo
+                //{
+                //    Type = entityType,
+                //    DbSetProperty = prop.Name
+                //};
             })
             .ToList();
 

@@ -1,16 +1,16 @@
-﻿using System.Collections.Immutable;
-using Microsoft.CodeAnalysis;
+﻿using Microsoft.CodeAnalysis;
+using System.Collections.Immutable;
 
 namespace ReadonlyDbContextGenerator.Model;
 
 internal class AggregatedInfo(
-    DbContextInfo dbContext,
-    ImmutableArray<EntityInfo> entities,
+    ImmutableArray<DbContextInfo> dbContexts,
     ImmutableArray<EntityConfigInfo> configurations,
+    ImmutableArray<EntityInfo> entities,
     Compilation compilation)
 {
-    public DbContextInfo DbContext { get; set; } = dbContext;
-    public ImmutableArray<EntityInfo> Entities { get; set; } = entities;
+    public ImmutableArray<DbContextInfo> DbContexts { get; set; } = dbContexts;
+    public ImmutableArray<EntityInfo> Entities { get; } = entities;
     public ImmutableArray<EntityConfigInfo> Configurations { get; set; } = configurations;
     public Compilation Compilation { get; } = compilation;
 }
