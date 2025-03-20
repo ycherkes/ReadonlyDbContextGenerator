@@ -47,18 +47,21 @@ public class ReadOnlyDbContextGenerator : IIncrementalGenerator
             })
             .Where(eci => eci != null);
 
-        var aggregatedInfo = dbContextProviders
+        var aggregatedInfo = dbContextProviders.Collect()
             .Combine(entityConfigs.Collect())
             .Select(static (combined, _) =>
             {
-                var (dbContext, compilationInfo) = combined.Left;
+                var dbContexts = combined.Left.Select(x => x.DbContextInfo).ToImmutableArray();
+
+                var compilationInfo = combined.Left.Select(x => x.CompilationInfo).FirstOrDefault();
 
                 var configs = combined.Right.GroupBy(x => x.EntityType, SymbolEqualityComparer.Default)
                     .Select(g => g.First())
-                    .Where(c => dbContext.EntityTypes.Contains(c.EntityType))
                     .ToImmutableArray();
 
-                return new AggregatedInfo(dbContext!, configs, compilationInfo.Compilation);
+                var aggregatedEntities = dbContexts.SelectMany(db => db.Entities).ToImmutableArray();
+
+                return new AggregatedInfo(dbContexts!, configs, aggregatedEntities, compilationInfo!.Compilation);
             });
 
         context.RegisterSourceOutput(aggregatedInfo, CodeGenerator.GenerateReadOnlyCode);
