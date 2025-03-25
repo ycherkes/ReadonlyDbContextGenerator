@@ -138,19 +138,21 @@ public class CodeGenerator
                 if (member is PropertyDeclarationSyntax prop)
                 {
                     // Handle navigation properties
-                    if (entity.NavigationProperties?.Any(p => p.Name == prop.Identifier.Text) == true)
+                    var navProp = entity.NavigationProperties?.FirstOrDefault(p => p.Name == prop.Identifier.Text);
+                    if (navProp != null)
                     {
-                        var navigationType = GetGenericType(prop.Type);
+                        var navigationTypeSyntax = GetGenericType(prop.Type);
+                        var navigationTypeSymbol = navProp.Type is INamedTypeSymbol { IsGenericType: true } namedType ? namedType.TypeArguments[0] : navProp.Type;
 
-                        var newNavigationType = navigationType is not PredefinedTypeSyntax
-                            ? GetReadonlyTypeName(navigationType.ToString())
-                            : navigationType.ToString();
+                        var newNavigationType = navigationTypeSymbol.IsReferenceType
+                            ? GetReadonlyTypeName(navigationTypeSymbol.Name)
+                            : navigationTypeSymbol.Name;
 
                         // If the navigation target is another entity, ensure it's added to the additional processing list
-                        if (!processedEntities.Contains(navigationType.ToString()) && allEntities.All(x => x.SyntaxNode.Identifier.Text != navigationType.ToString()))
+                        if (!processedEntities.Contains(navigationTypeSymbol.Name) && allEntities.All(x => x.SyntaxNode.Identifier.Text != navigationTypeSymbol.Name))
                         {
                             // Dynamically find the entity class across all syntax trees
-                            var referencedEntityClass = SyntaxHelper.FindEntityClassOrInterface(navigationType, compilation);
+                            var referencedEntityClass = SyntaxHelper.FindEntityClassOrInterface(navigationTypeSyntax, compilation);
                             if (referencedEntityClass != null)
                             {
                                 var referencedEntityInfo = CreateEntityInfoFromSyntaxTree(referencedEntityClass, compilation);
