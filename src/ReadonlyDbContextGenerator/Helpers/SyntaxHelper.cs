@@ -1,31 +1,32 @@
-﻿using System.Linq;
-using Microsoft.CodeAnalysis;
+﻿using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
+using System.Linq;
 
 namespace ReadonlyDbContextGenerator.Helpers;
 
 public class SyntaxHelper
 {
-    public static ClassDeclarationSyntax FindEntityClass(ISymbol entityType)
+    public static TypeDeclarationSyntax FindEntityClassOrInterface(ISymbol entityType)
     {
-        return entityType?.DeclaringSyntaxReferences.FirstOrDefault()?.GetSyntax() as ClassDeclarationSyntax;
+        var syntax = entityType?.DeclaringSyntaxReferences.FirstOrDefault()?.GetSyntax();
+        return syntax is ClassDeclarationSyntax or InterfaceDeclarationSyntax ? syntax as TypeDeclarationSyntax : null;
     }
 
-    public static ClassDeclarationSyntax FindEntityClass(TypeSyntax entityType, Compilation compilation)
+    public static TypeDeclarationSyntax FindEntityClassOrInterface(TypeSyntax entityType, Compilation compilation)
     {
         var sm = compilation.GetSemanticModel(entityType.SyntaxTree);
         var typeSymbol = sm.GetSymbolInfo(entityType).Symbol;
 
-        return FindEntityClass(typeSymbol);
+        return FindEntityClassOrInterface(typeSymbol);
     }
 
-    public static ClassDeclarationSyntax FindEntityClass(BaseTypeSyntax entityType, Compilation compilation)
+    public static TypeDeclarationSyntax FindEntityClassOrInterface(BaseTypeSyntax entityType, Compilation compilation)
     {
         var sm = compilation.GetSemanticModel(entityType.SyntaxTree);
         var typeSymbol = sm.GetSymbolInfo(entityType.Type).Symbol;
 
-        return FindEntityClass(typeSymbol);
+        return FindEntityClassOrInterface(typeSymbol);
     }
 
     public static bool IsClassWithBaseList(SyntaxNode context)

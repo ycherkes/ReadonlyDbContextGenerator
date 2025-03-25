@@ -120,7 +120,7 @@ public class CodeGenerator
     }
 
     private static string ModifyEntitySyntax(EntityInfo entity,
-        ClassDeclarationSyntax entitySyntax,
+        TypeDeclarationSyntax entitySyntax,
         HashSet<string> processedEntities,
         IReadOnlyList<EntityInfo> allEntities,
         List<EntityInfo> additionalEntitiesToProcess,
@@ -142,13 +142,15 @@ public class CodeGenerator
                     {
                         var navigationType = GetGenericType(prop.Type);
 
-                        var readOnlyNavigationType = GetReadonlyTypeName(navigationType.ToString());
+                        var newNavigationType = navigationType is not PredefinedTypeSyntax
+                            ? GetReadonlyTypeName(navigationType.ToString())
+                            : navigationType.ToString();
 
                         // If the navigation target is another entity, ensure it's added to the additional processing list
                         if (!processedEntities.Contains(navigationType.ToString()) && allEntities.All(x => x.SyntaxNode.Identifier.Text != navigationType.ToString()))
                         {
                             // Dynamically find the entity class across all syntax trees
-                            var referencedEntityClass = SyntaxHelper.FindEntityClass(navigationType, compilation);
+                            var referencedEntityClass = SyntaxHelper.FindEntityClassOrInterface(navigationType, compilation);
                             if (referencedEntityClass != null)
                             {
                                 var referencedEntityInfo = CreateEntityInfoFromSyntaxTree(referencedEntityClass, compilation);
@@ -163,12 +165,12 @@ public class CodeGenerator
                             if (SymbolHelper.IsCollection(type.Type?.OriginalDefinition))
                             {
                                 prop = prop.WithType(
-                                    SyntaxFactory.ParseTypeName($"IReadOnlyCollection<{readOnlyNavigationType}>"));
+                                    SyntaxFactory.ParseTypeName($"IReadOnlyCollection<{newNavigationType}>"));
                             }
                         }
                         else
                         {
-                            prop = prop.WithType(SyntaxFactory.ParseTypeName(readOnlyNavigationType));
+                            prop = prop.WithType(SyntaxFactory.ParseTypeName(newNavigationType));
                         }
                     }
 
@@ -197,7 +199,7 @@ public class CodeGenerator
             });
 
         // Remove methods from the entity (DDD approach often use them in domain rich model)
-        modifiedMembers = modifiedMembers.Where(m => m is not MethodDeclarationSyntax);
+        modifiedMembers = modifiedMembers.Where(m => m is not MethodDeclarationSyntax && m is not ConstructorDeclarationSyntax);
 
         // Update the class name to append "ReadOnly"
         var readonlyClassName = GetReadonlyTypeName(entity.SyntaxNode.Identifier.Text);
@@ -208,31 +210,39 @@ public class CodeGenerator
             .WithIdentifier(newIdentifier)
             .WithMembers(SyntaxFactory.List(modifiedMembers));
 
-        var baseList = entitySyntax.BaseList ?? SyntaxFactory.BaseList();
+        var baseClassList = new List<BaseTypeSyntax>();
+        var baseInterfaceList = new List<BaseTypeSyntax>();
 
-        if (baseList.Types.Count > 0)
+        if (entitySyntax.BaseList?.Types.Count > 0)
         {
-            foreach (var type in baseList.Types.ToArray())
+            foreach (var type in entitySyntax.BaseList.Types.ToArray())
             {
                 var typeInfo = sm.GetTypeInfo(type.Type);
                 var existingAdditionalEntity = additionalEntitiesToProcess.FirstOrDefault(ae => SymbolEqualityComparer.Default.Equals(ae.Type, typeInfo.Type));
 
                 if (existingAdditionalEntity == null)
                 {
+                    var referencedEntityClassOrInterface = SyntaxHelper.FindEntityClassOrInterface(type, compilation);
+                    if (referencedEntityClassOrInterface == null) continue;
 
-                    var referencedEntityClass = SyntaxHelper.FindEntityClass(type, compilation);
-                    if (referencedEntityClass == null) continue;
-
-                    var referencedEntityInfo = CreateEntityInfoFromSyntaxTree(referencedEntityClass, compilation);
-                    additionalEntitiesToProcess.Add(referencedEntityInfo);
+                    existingAdditionalEntity = CreateEntityInfoFromSyntaxTree(referencedEntityClassOrInterface, compilation);
+                    additionalEntitiesToProcess.Add(existingAdditionalEntity);
                 }
 
-                baseList = baseList.RemoveNode(type, SyntaxRemoveOptions.KeepNoTrivia)!;
                 var readonlyName = GetReadonlyTypeName(type.ToString());
-                baseList = baseList.AddTypes(SyntaxFactory.SimpleBaseType(SyntaxFactory.ParseTypeName(readonlyName)));
+                var readonlyType = SyntaxFactory.SimpleBaseType(SyntaxFactory.ParseTypeName(readonlyName));
+
+                if (existingAdditionalEntity.SyntaxNode is InterfaceDeclarationSyntax)
+                {
+                    baseInterfaceList.Add(readonlyType);
+                }
+                else
+                {
+                    baseClassList.Add(readonlyType);
+                }
             }
 
-            newEntitySyntax = newEntitySyntax.WithBaseList(baseList);
+            newEntitySyntax = newEntitySyntax.WithBaseList(SyntaxFactory.BaseList().AddTypes(baseClassList.Concat(baseInterfaceList).ToArray()));
         }
 
         string[] requiredUsings = ["System", "System.Collections.Generic"];
@@ -415,11 +425,10 @@ public class CodeGenerator
         return type is GenericNameSyntax gns ? gns.TypeArgumentList.Arguments[0] : type;
     }
 
-    private static EntityInfo CreateEntityInfoFromSyntaxTree(ClassDeclarationSyntax entityClass, Compilation compilation)
+    private static EntityInfo CreateEntityInfoFromSyntaxTree(TypeDeclarationSyntax entityTypeSyntax, Compilation compilation)
     {
-        var model = compilation.GetSemanticModel(entityClass.SyntaxTree);
-        var type = model.GetDeclaredSymbol(entityClass)?.OriginalDefinition;
-
+        var model = compilation.GetSemanticModel(entityTypeSyntax.SyntaxTree);
+        var type = model.GetDeclaredSymbol(entityTypeSyntax)?.OriginalDefinition;
         var navigationProperties = type?.GetMembers()
             .OfType<IPropertySymbol>()
             .Where(SymbolHelper.IsNavigationProperty)
@@ -429,7 +438,7 @@ public class CodeGenerator
         {
             Type = type,
             NavigationProperties = navigationProperties,
-            SyntaxNode = entityClass
+            SyntaxNode = entityTypeSyntax
         };
     }
 
