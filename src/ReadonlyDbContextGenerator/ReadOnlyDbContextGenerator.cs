@@ -145,7 +145,7 @@ public class ReadOnlyDbContextGenerator : IIncrementalGenerator
             .Where(SymbolHelper.IsNavigationProperty)
             .ToList();
 
-        var classDecl = SyntaxHelper.FindEntityClass(entityType);
+        var classDecl = SyntaxHelper.FindEntityClassOrInterface(entityType);
 
         return new EntityInfo
         {

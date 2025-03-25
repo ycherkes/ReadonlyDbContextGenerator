@@ -7,7 +7,12 @@ public class SymbolHelper
 {
     public static bool IsNavigationProperty(IPropertySymbol prop)
     {
-        return prop.Type is INamedTypeSymbol { IsValueType: false, SpecialType: SpecialType.None };
+        return IsNavigationType(prop.Type);
+    }
+
+    public static bool IsNavigationType(ISymbol type)
+    {
+        return type is INamedTypeSymbol { IsValueType: false, SpecialType: SpecialType.None };
     }
 
     public static bool IsCollection(ITypeSymbol typeSymbol)
