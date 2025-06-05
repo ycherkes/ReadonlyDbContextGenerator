@@ -19,7 +19,7 @@
 		<RepositoryUrl>https://github.com/ycherkes/ReadonlyDbContextGenerator</RepositoryUrl>
 		<TargetFramework>netstandard2.0</TargetFramework>
 		<Title>Readonly DbContext Generator</Title>
-		<Version>0.0.9</Version>
+		<Version>0.1.0</Version>
 	</PropertyGroup>
 
 	<ItemGroup>
