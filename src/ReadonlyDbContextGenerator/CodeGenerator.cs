@@ -589,6 +589,9 @@ public class CodeGenerator
         const string setMethodText = "IQueryable<TEntity> Set<TEntity>() where TEntity : class;";
         var setMethod = SyntaxFactory.ParseMemberDeclaration(setMethodText)!.NormalizeWhitespace();
         interfaceMembers.Add(setMethod);
+        const string databasePropertyText = "DatabaseFacade Database { get; }";
+        var databaseProperty = SyntaxFactory.ParseMemberDeclaration(databasePropertyText)!.NormalizeWhitespace();
+        interfaceMembers.Add(databaseProperty);
 
         var newBaseList = SyntaxFactory.BaseList(SyntaxFactory.SeparatedList(
         [
@@ -607,7 +610,7 @@ public class CodeGenerator
             .AddMembers(interfaceDeclaration)
             .NormalizeWhitespace();
 
-        var combinedUsings = CombineUsings(dbContext.SyntaxNode, ["Microsoft.EntityFrameworkCore", "System", "System.Linq"]);
+        var combinedUsings = CombineUsings(dbContext.SyntaxNode, ["Microsoft.EntityFrameworkCore", "Microsoft.EntityFrameworkCore.Infrastructure", "System", "System.Linq"]);
 
         var compilationUnit = SyntaxFactory.CompilationUnit()
             .AddUsings(combinedUsings.ToArray())

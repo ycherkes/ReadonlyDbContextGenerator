@@ -1,4 +1,4 @@
-using Microsoft.CodeAnalysis;
+﻿using Microsoft.CodeAnalysis;
 using Microsoft.EntityFrameworkCore;
 using VerifyCS = UnitTests.CSharpSourceGeneratorVerifier<ReadonlyDbContextGenerator.ReadOnlyDbContextGenerator>;
 
@@ -126,6 +126,7 @@ public class ReadonlyDbContextGeneratorTests
         // Expected generated output for the IReadOnlyDbContext interface
         var expectedIReadOnlyDbContextSource = """
                                                using Microsoft.EntityFrameworkCore;
+                                               using Microsoft.EntityFrameworkCore.Infrastructure;
                                                using MyApp.Entities;
                                                using System;
                                                using System.Collections.Generic;
@@ -139,6 +140,7 @@ public class ReadonlyDbContextGeneratorTests
                                                
                                                        IQueryable<TEntity> Set<TEntity>()
                                                            where TEntity : class;
+                                                       DatabaseFacade Database { get; }
                                                    }
                                                }
                                                """;
