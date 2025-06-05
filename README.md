@@ -123,6 +123,7 @@ public partial interface IReadOnlyMyDbContext : IDisposable, IAsyncDisposable
     IQueryable<ReadOnlyUser> Users { get; }
     IQueryable<ReadOnlyOrder> Orders { get; }
     IQueryable<TEntity> Set<TEntity>() where TEntity : class;
+    DatabaseFacade Database { get; }
 }
 ```
 
