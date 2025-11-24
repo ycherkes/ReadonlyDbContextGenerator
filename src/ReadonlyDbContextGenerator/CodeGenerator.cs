@@ -13,21 +13,42 @@ namespace ReadonlyDbContextGenerator;
 public class CodeGenerator
 {
     private static MemberDeclarationSyntax[] _readonlyDbContextMethods;
+    private static readonly DiagnosticDescriptor SkippedExternalDbSet = new(
+        id: "RDCTX001",
+        title: "Readonly DbContext skipping external DbSet",
+        messageFormat: "DbContext '{0}' DbSet '{1}' uses external entity type '{2}' and is skipped from readonly generation.",
+        category: "SourceGeneration",
+        defaultSeverity: DiagnosticSeverity.Warning,
+        isEnabledByDefault: true);
 
     internal static void GenerateReadOnlyCode(SourceProductionContext context, AggregatedInfo info)
     {
         var commonNamespace = GetCommonRootNamespace(info);
 
+        foreach (var dbContext in info.DbContexts)
+        {
+            foreach (var external in dbContext.ExternalEntities)
+            {
+                var diagnostic = Diagnostic.Create(
+                    SkippedExternalDbSet,
+                    external.Location,
+                    dbContext.Identifier.Text,
+                    external.DbSetProperty,
+                    external.TypeSymbol?.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat));
+
+                context.ReportDiagnostic(diagnostic);
+            }
+        }
+
         var processedTypes = new HashSet<string>(GenerateReadOnlyEntities(context, info, commonNamespace));
 
-        var entityAndDbContextTypes = info.Entities.Select(e => e.Type)
-            .Concat(info.DbContexts.Select(x => x.TypeSymbol))
-            .Select(x => x.Name)
+        var typeNamesForRewrite = processedTypes
+            .Concat(info.DbContexts.Select(x => x.TypeSymbol.Name))
             .ToImmutableHashSet();
 
         foreach (var config in info.Configurations)
         {
-            var configSyntax = ModifyEntityConfigSyntax(entityAndDbContextTypes, config.SyntaxNode!, info.Compilation, commonNamespace);
+            var configSyntax = ModifyEntityConfigSyntax(typeNamesForRewrite, config.SyntaxNode!, info.Compilation, commonNamespace);
             var readonlyEntityConfigTypeName = GetReadonlyTypeName(config.EntityType.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat));
             context.AddSource($"{readonlyEntityConfigTypeName}Configuration.g.cs", configSyntax);
             processedTypes.Add(config.SyntaxNode.Identifier.Text);
@@ -220,13 +241,20 @@ public class CodeGenerator
             foreach (var type in entitySyntax.BaseList.Types.ToArray())
             {
                 var typeInfo = sm.GetTypeInfo(type.Type);
+
+                // We can only create a readonly base type if we can find its syntax (i.e. it's part of the
+                // source being generated). Skip interfaces/classes from external assemblies so we don't
+                // emit invalid ReadOnly* inheritances.
+                var referencedEntityClassOrInterface = SyntaxHelper.FindEntityClassOrInterface(type, compilation);
+                if (referencedEntityClassOrInterface == null)
+                {
+                    continue;
+                }
+
                 var existingAdditionalEntity = additionalEntitiesToProcess.FirstOrDefault(ae => SymbolEqualityComparer.Default.Equals(ae.Type, typeInfo.Type));
 
                 if (existingAdditionalEntity == null)
                 {
-                    var referencedEntityClassOrInterface = SyntaxHelper.FindEntityClassOrInterface(type, compilation);
-                    if (referencedEntityClassOrInterface == null) continue;
-
                     existingAdditionalEntity = CreateEntityInfoFromSyntaxTree(referencedEntityClassOrInterface, compilation);
                     additionalEntitiesToProcess.Add(existingAdditionalEntity);
                 }
@@ -244,7 +272,15 @@ public class CodeGenerator
                 }
             }
 
-            newEntitySyntax = newEntitySyntax.WithBaseList(SyntaxFactory.BaseList().AddTypes(baseClassList.Concat(baseInterfaceList).ToArray()));
+            var readonlyBaseTypes = baseClassList.Concat(baseInterfaceList).ToArray();
+            if (readonlyBaseTypes.Length > 0)
+            {
+                newEntitySyntax = newEntitySyntax.WithBaseList(SyntaxFactory.BaseList().AddTypes(readonlyBaseTypes));
+            }
+            else
+            {
+                newEntitySyntax = newEntitySyntax.WithBaseList(null);
+            }
         }
 
         string[] requiredUsings = ["System", "System.Collections.Generic"];
@@ -460,8 +496,11 @@ public class CodeGenerator
 
         var newDbContextSyntax = (ClassDeclarationSyntax)typeReferenceRewriter.Visit(dbContextSyntax);
 
+        var externalDbSetNames = new HashSet<string>(dbContext.ExternalEntities.Select(e => e.DbSetProperty), StringComparer.Ordinal);
+
         var withoutSaveMethods = newDbContextSyntax.Members
-            .Where(member => member is not MethodDeclarationSyntax { Identifier.Text: "SaveChanges" or "SaveChangesAsync" });
+            .Where(member => member is not MethodDeclarationSyntax { Identifier.Text: "SaveChanges" or "SaveChangesAsync" })
+            .Where(member => member is not PropertyDeclarationSyntax prop || !externalDbSetNames.Contains(prop.Identifier.Text));
 
         var newMethods = GetReadonlyDbContextMethods();
 
@@ -620,14 +659,14 @@ public class CodeGenerator
         return compilationUnit.NormalizeWhitespace().ToFullString();
     }
 
-    private static string ModifyEntityConfigSyntax(ImmutableHashSet<string> entityAndDbContextTypes,
+    private static string ModifyEntityConfigSyntax(ImmutableHashSet<string> typeNames,
         ClassDeclarationSyntax configSyntax, Compilation compilation, string commonNamespace)
     {
         var readonlyEntityConfigTypeName = GetReadonlyTypeName(configSyntax.Identifier.Text);
         var newIdentifier = SyntaxFactory.Identifier(readonlyEntityConfigTypeName);
         var sm = compilation.GetSemanticModel(configSyntax.SyntaxTree);
 
-        var typeReferenceRewriter = new TypeReferenceRewriter(entityAndDbContextTypes, sm);
+        var typeReferenceRewriter = new TypeReferenceRewriter(typeNames, sm);
 
         var newConfigSyntax = (ClassDeclarationSyntax)typeReferenceRewriter.Visit(configSyntax);
 

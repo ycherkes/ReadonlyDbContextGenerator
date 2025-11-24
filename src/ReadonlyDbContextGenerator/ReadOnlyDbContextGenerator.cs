@@ -2,6 +2,7 @@
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using ReadonlyDbContextGenerator.Helpers;
 using ReadonlyDbContextGenerator.Model;
+using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
 
@@ -100,26 +101,45 @@ public class ReadOnlyDbContextGenerator : IIncrementalGenerator
 
         var classDecl = (ClassDeclarationSyntax)context.Node;
 
+        var externalEntities = new List<ExternalEntityInfo>();
+
         var entities = typeSymbol.GetMembers()
             .OfType<IPropertySymbol>()
             .Where(prop => prop.Type is INamedTypeSymbol { IsGenericType: true } gns && SymbolEqualityComparer.Default.Equals(gns.ConstructedFrom, compilationInfo.DbSetSymbol))
             .Select(prop =>
             {
-                var entityType = ((INamedTypeSymbol)prop.Type).TypeArguments[0];
-                var ei = ExtractEntityInfo(entityType);
-
-                if (ei != null)
+                var entityTypeSymbol = ((INamedTypeSymbol)prop.Type).TypeArguments[0] as INamedTypeSymbol;
+                if (entityTypeSymbol == null)
                 {
-                    ei.DbSetProperty = prop.Name;
+                    externalEntities.Add(new ExternalEntityInfo
+                    {
+                        DbSetProperty = prop.Name,
+                        Location = prop.Locations.FirstOrDefault()
+                    });
+
+                    return null;
                 }
 
+                var entitySyntax = SyntaxHelper.FindEntityClassOrInterface(entityTypeSymbol);
+
+                if (entitySyntax == null)
+                {
+                    externalEntities.Add(new ExternalEntityInfo
+                    {
+                        DbSetProperty = prop.Name,
+                        TypeSymbol = entityTypeSymbol,
+                        Location = prop.Locations.FirstOrDefault()
+                    });
+
+                    return null;
+                }
+
+                var ei = ExtractEntityInfo(entityTypeSymbol, entitySyntax);
+                ei.DbSetProperty = prop.Name;
+
                 return ei;
-                //return new EntityInfo
-                //{
-                //    Type = entityType,
-                //    DbSetProperty = prop.Name
-                //};
             })
+            .Where(ei => ei != null)
             .ToList();
 
         var entityTypes = entities.Select(e => e.Type).ToImmutableHashSet(SymbolEqualityComparer.Default);
@@ -130,12 +150,13 @@ public class ReadOnlyDbContextGenerator : IIncrementalGenerator
             TypeSymbol = typeSymbol,
             Namespace = typeSymbol.ContainingNamespace,
             Entities = entities,
+            ExternalEntities = externalEntities,
             EntityTypes = entityTypes,
             SyntaxNode = classDecl
         };
     }
 
-    private static EntityInfo ExtractEntityInfo(ITypeSymbol entityType)
+    private static EntityInfo ExtractEntityInfo(ITypeSymbol entityType, TypeDeclarationSyntax entitySyntax = null)
     {
         if (entityType == null)
             return null;
@@ -145,7 +166,7 @@ public class ReadOnlyDbContextGenerator : IIncrementalGenerator
             .Where(SymbolHelper.IsNavigationProperty)
             .ToList();
 
-        var classDecl = SyntaxHelper.FindEntityClassOrInterface(entityType);
+        var classDecl = entitySyntax ?? SyntaxHelper.FindEntityClassOrInterface(entityType);
 
         return new EntityInfo
         {
