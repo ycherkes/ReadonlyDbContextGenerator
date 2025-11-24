@@ -10,6 +10,7 @@ internal class DbContextInfo
     public SyntaxToken Identifier { get; set; }
     public INamespaceSymbol Namespace { get; set; }
     public List<EntityInfo> Entities { get; set; } = [];
+    public List<ExternalEntityInfo> ExternalEntities { get; set; } = [];
     public ClassDeclarationSyntax SyntaxNode { get; set; }
     public INamedTypeSymbol TypeSymbol { get; set; }
     public ImmutableHashSet<ISymbol> EntityTypes { get; set; }
