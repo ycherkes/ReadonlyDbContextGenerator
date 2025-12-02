@@ -423,7 +423,6 @@ public class CodeGenerator
         public override SyntaxNode VisitGenericName(GenericNameSyntax node)
         {
 
-
             // Check if the generic type matches the old class name
             var updatedArguments = node.TypeArgumentList.Arguments
                 .Select(arg =>
@@ -441,6 +440,25 @@ public class CodeGenerator
                     return arg;
                 })
                 .ToArray();
+
+            // Special handling: ValueComparer<List<ReadOnlyX>> should align with generated IReadOnlyCollection properties.
+            if (node.Identifier.Text == "ValueComparer" && node.TypeArgumentList.Arguments.Count == 1)
+            {
+                if (node.TypeArgumentList.Arguments[0] is GenericNameSyntax { Identifier.Text: "List" or "IList" or "ICollection" or "IEnumerable" } listArg
+                    && listArg.TypeArgumentList.Arguments.Count == 1)
+                {
+                    // Rewrite the element type (so Translation -> ReadOnlyTranslation)
+                    var elementType = listArg.TypeArgumentList.Arguments[0];
+                    var rewrittenElementType = (TypeSyntax)Visit(elementType) ?? elementType;
+
+                    var readOnlyCollection = SyntaxFactory.GenericName("IReadOnlyCollection")
+                        .WithTypeArgumentList(SyntaxFactory.TypeArgumentList(
+                            SyntaxFactory.SingletonSeparatedList(rewrittenElementType.WithTriviaFrom(elementType))));
+
+                    return node.WithTypeArgumentList(SyntaxFactory.TypeArgumentList(SyntaxFactory.SingletonSeparatedList<TypeSyntax>(readOnlyCollection)))
+                        .WithTriviaFrom(node);
+                }
+            }
 
             // Return the updated generic name
             if (!updatedArguments.SequenceEqual(node.TypeArgumentList.Arguments))
@@ -673,7 +691,7 @@ public class CodeGenerator
         // Update class declaration with new base type
         newConfigSyntax = newConfigSyntax.WithIdentifier(newIdentifier);
 
-        var combinedUsings = CombineUsings(configSyntax, []);
+        var combinedUsings = CombineUsings(configSyntax, ["System.Collections.Generic"]);
 
         var namespaceDeclaration = SyntaxFactory.NamespaceDeclaration(SyntaxFactory.ParseName(commonNamespace))
             .WithTrailingTrivia(SyntaxFactory.CarriageReturnLineFeed)
