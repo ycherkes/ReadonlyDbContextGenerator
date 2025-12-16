@@ -1,5 +1,6 @@
 ﻿using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.Testing;
+using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.EntityFrameworkCore;
 using VerifyCS = UnitTests.CSharpSourceGeneratorVerifier<ReadonlyDbContextGenerator.ReadOnlyDbContextGenerator>;
 
@@ -13,6 +14,7 @@ public class ReadonlyDbContextGeneratorTests
     {
         // Input source code
         var inputSource = """
+                          #nullable enable
                           using System.Collections.Generic;
                           using Microsoft.EntityFrameworkCore;
 
@@ -51,100 +53,104 @@ public class ReadonlyDbContextGeneratorTests
 
         // Expected generated output for the ReadOnly entity
         var expectedUserReadOnlySource = """
-                                         using Microsoft.EntityFrameworkCore;
-                                         using MyApp.Entities;
-                                         using System;
-                                         using System.Collections.Generic;
-                                         
-                                         namespace MyApp.Entities.Generated
-                                         {
-                                             public class ReadOnlyUser
-                                             {
-                                                 public int Id { get; init; }
+using Microsoft.EntityFrameworkCore;
+using MyApp.Entities;
+using System;
+#nullable enable
+using System.Collections.Generic;
 
-                                                 public string Name { get; init; }
+namespace MyApp.Entities.Generated
+{
+    public class ReadOnlyUser
+    {
+        public int Id { get; init; }
 
-                                                 public IReadOnlyCollection<ReadOnlyOrder> Orders { get; init; }
-                                             }
-                                         }
-                                         """;
+        public string Name { get; init; }
+
+        public IReadOnlyCollection<ReadOnlyOrder> Orders { get; init; }
+    }
+}
+""";
 
         var expectedOrderReadOnlySource = """
-                                         using Microsoft.EntityFrameworkCore;
-                                         using MyApp.Entities;
-                                         using System;
-                                         using System.Collections.Generic;
-                                         
-                                         namespace MyApp.Entities.Generated
-                                         {
-                                             public class ReadOnlyOrder
-                                             {
-                                                 public int Id { get; init; }
+using Microsoft.EntityFrameworkCore;
+using MyApp.Entities;
+using System;
+#nullable enable
+using System.Collections.Generic;
 
-                                                 public string Description { get; init; }
-                                             }
-                                         }
-                                         """;
+namespace MyApp.Entities.Generated
+{
+    public class ReadOnlyOrder
+    {
+        public int Id { get; init; }
+
+        public string Description { get; init; }
+    }
+}
+""";
 
         // Expected generated output for the ReadonlyDbContext
         var expectedReadonlyDbContextSource = """
-                                              using Microsoft.EntityFrameworkCore;
-                                              using MyApp.Entities;
-                                              using System;
-                                              using System.Collections.Generic;
-                                              using System.Linq;
-                                              using System.Threading;
-                                              using System.Threading.Tasks;
-                                              
-                                              namespace MyApp.Entities.Generated
-                                              {
-                                                  public partial class ReadOnlyMyDbContext : DbContext, IReadOnlyMyDbContext
-                                                  {
-                                                      public DbSet<ReadOnlyUser> Users { get; set; }
-                                              
-                                                      public sealed override int SaveChanges()
-                                                      {
-                                                          throw new NotImplementedException("Do not call SaveChanges on a readonly db context.");
-                                                      }
-                                              
-                                                      public sealed override Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
-                                                      {
-                                                          throw new NotImplementedException("Do not call SaveChangesAsync on a readonly db context.");
-                                                      }
-                                              
-                                                      public sealed override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
-                                                      {
-                                                          throw new NotImplementedException("Do not call SaveChangesAsync on a readonly db context.");
-                                                      }
-                                              
-                                                      IQueryable<ReadOnlyUser> IReadOnlyMyDbContext.Users => Users;
-                                                      IQueryable<TEntity> IReadOnlyMyDbContext.Set<TEntity>()
-                                                          where TEntity : class => Set<TEntity>();
-                                                  }
-                                              }
-                                              """;
+using Microsoft.EntityFrameworkCore;
+using MyApp.Entities;
+using System;
+#nullable enable
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
+
+namespace MyApp.Entities.Generated
+{
+    public partial class ReadOnlyMyDbContext : DbContext, IReadOnlyMyDbContext
+    {
+        public DbSet<ReadOnlyUser> Users { get; set; }
+
+        public sealed override int SaveChanges()
+        {
+            throw new NotImplementedException("Do not call SaveChanges on a readonly db context.");
+        }
+
+        public sealed override Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
+        {
+            throw new NotImplementedException("Do not call SaveChangesAsync on a readonly db context.");
+        }
+
+        public sealed override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+        {
+            throw new NotImplementedException("Do not call SaveChangesAsync on a readonly db context.");
+        }
+
+        IQueryable<ReadOnlyUser> IReadOnlyMyDbContext.Users => Users;
+        IQueryable<TEntity> IReadOnlyMyDbContext.Set<TEntity>()
+            where TEntity : class => Set<TEntity>();
+    }
+}
+""";
 
         // Expected generated output for the IReadOnlyDbContext interface
         var expectedIReadOnlyDbContextSource = """
-                                               using Microsoft.EntityFrameworkCore;
-                                               using Microsoft.EntityFrameworkCore.Infrastructure;
-                                               using MyApp.Entities;
-                                               using System;
-                                               using System.Collections.Generic;
-                                               using System.Linq;
-                                               
-                                               namespace MyApp.Entities.Generated
-                                               {
-                                                   public partial interface IReadOnlyMyDbContext : IDisposable, IAsyncDisposable
-                                                   {
-                                                       IQueryable<ReadOnlyUser> Users { get; }
-                                               
-                                                       IQueryable<TEntity> Set<TEntity>()
-                                                           where TEntity : class;
-                                                       DatabaseFacade Database { get; }
-                                                   }
-                                               }
-                                               """;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using MyApp.Entities;
+using System;
+#nullable enable
+using System.Collections.Generic;
+using System.Linq;
+
+namespace MyApp.Entities.Generated
+{
+    public partial interface IReadOnlyMyDbContext : IDisposable, IAsyncDisposable
+    {
+        IQueryable<ReadOnlyUser> Users { get; }
+
+        IQueryable<TEntity> Set<TEntity>()
+            where TEntity : class;
+        DatabaseFacade Database { get; }
+    }
+}
+""";
 
         // Configure the test
         var test = new VerifyCS.Test
@@ -166,6 +172,17 @@ public class ReadonlyDbContextGeneratorTests
                 }
             },
         };
+
+        test.SolutionTransforms.Add((solution, projectId) =>
+        {
+            var project = solution.GetProject(projectId);
+            var options = (CSharpCompilationOptions)project.CompilationOptions;
+            options = options.WithSpecificDiagnosticOptions(options.SpecificDiagnosticOptions.SetItems(new Dictionary<string, ReportDiagnostic>
+            {
+                ["CS8618"] = ReportDiagnostic.Suppress
+            }));
+            return project.WithCompilationOptions(options).Solution;
+        });
 
         // Run the test
         await test.RunAsync();
@@ -268,46 +285,49 @@ public class ReadonlyDbContextGeneratorTests
                              """;
 
         var expectedDbContext = """
-                                using Microsoft.EntityFrameworkCore;
-                                using MyApp.Entities;
-                                using System;
-                                using System.Linq;
-                                using System.Threading;
-                                using System.Threading.Tasks;
-                                
-                                namespace MyApp.Entities.Generated
-                                {
-                                    public partial class ReadOnlyMyDbContext : DbContext, IReadOnlyMyDbContext
-                                    {
-                                        public DbSet<ReadOnlyParameterSetting> ParameterSettings { get; set; }
-                                
-                                        public sealed override int SaveChanges()
-                                        {
-                                            throw new NotImplementedException("Do not call SaveChanges on a readonly db context.");
-                                        }
-                                
-                                        public sealed override Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
-                                        {
-                                            throw new NotImplementedException("Do not call SaveChangesAsync on a readonly db context.");
-                                        }
-                                
-                                        public sealed override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
-                                        {
-                                            throw new NotImplementedException("Do not call SaveChangesAsync on a readonly db context.");
-                                        }
-                                
-                                        IQueryable<ReadOnlyParameterSetting> IReadOnlyMyDbContext.ParameterSettings => ParameterSettings;
-                                        IQueryable<TEntity> IReadOnlyMyDbContext.Set<TEntity>()
-                                            where TEntity : class => Set<TEntity>();
-                                    }
-                                }
-                                """;
+using Microsoft.EntityFrameworkCore;
+using MyApp.Entities;
+using System;
+#nullable enable
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
+
+namespace MyApp.Entities.Generated
+{
+    public partial class ReadOnlyMyDbContext : DbContext, IReadOnlyMyDbContext
+    {
+        public DbSet<ReadOnlyParameterSetting> ParameterSettings { get; set; }
+
+        public sealed override int SaveChanges()
+        {
+            throw new NotImplementedException("Do not call SaveChanges on a readonly db context.");
+        }
+
+        public sealed override Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
+        {
+            throw new NotImplementedException("Do not call SaveChangesAsync on a readonly db context.");
+        }
+
+        public sealed override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+        {
+            throw new NotImplementedException("Do not call SaveChangesAsync on a readonly db context.");
+        }
+
+        IQueryable<ReadOnlyParameterSetting> IReadOnlyMyDbContext.ParameterSettings => ParameterSettings;
+        IQueryable<TEntity> IReadOnlyMyDbContext.Set<TEntity>()
+            where TEntity : class => Set<TEntity>();
+    }
+}
+""";
 
         var expectedInterface = """
                                 using Microsoft.EntityFrameworkCore;
                                 using Microsoft.EntityFrameworkCore.Infrastructure;
                                 using MyApp.Entities;
                                 using System;
+                                using System.Collections.Generic;
                                 using System.Linq;
                                 
                                 namespace MyApp.Entities.Generated
@@ -343,7 +363,312 @@ public class ReadonlyDbContextGeneratorTests
             },
         };
 
+        test.SolutionTransforms.Add((solution, projectId) =>
+        {
+            var project = solution.GetProject(projectId);
+            var options = (CSharpCompilationOptions)project.CompilationOptions;
+            options = options.WithSpecificDiagnosticOptions(options.SpecificDiagnosticOptions.SetItems(new Dictionary<string, ReportDiagnostic>
+            {
+                ["CS8618"] = ReportDiagnostic.Suppress
+            }));
+            return project.WithCompilationOptions(options).Solution;
+        });
+
         test.TestBehaviors |= TestBehaviors.SkipGeneratedSourcesCheck;
+
+        await test.RunAsync();
+    }
+
+    [Fact]
+    public async Task SelfReferencingCollectionsBecomeReadOnlyCollectionsWithReadonlyElement()
+    {
+        var inputSource = """
+                          #nullable enable
+                          using System.Collections.Generic;
+                          using Microsoft.EntityFrameworkCore;
+
+                          namespace MyApp.Entities
+                          {
+                              public class Department
+                              {
+                                  public int Id { get; set; }
+                                  public string Name { get; set; }
+                                  public Department? Parent { get; set; }
+                                  public List<Department>? Children { get; set; }
+                              }
+
+                              public class MyDbContext : DbContext
+                              {
+                                  public DbSet<Department> Departments { get; set; }
+                              }
+                          }
+                          """;
+
+        var expectedDepartment = """
+using Microsoft.EntityFrameworkCore;
+using MyApp.Entities;
+using System;
+#nullable enable
+using System.Collections.Generic;
+
+namespace MyApp.Entities.Generated
+{
+    public class ReadOnlyDepartment
+    {
+        public int Id { get; init; }
+
+        public string Name { get; init; }
+
+        public ReadOnlyDepartment? Parent { get; init; }
+
+        public IReadOnlyCollection<ReadOnlyDepartment>? Children { get; init; }
+    }
+}
+""";
+
+        var expectedDbContext = """
+using Microsoft.EntityFrameworkCore;
+using MyApp.Entities;
+using System;
+#nullable enable
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
+
+namespace MyApp.Entities.Generated
+{
+    public partial class ReadOnlyMyDbContext : DbContext, IReadOnlyMyDbContext
+    {
+        public DbSet<ReadOnlyDepartment> Departments { get; set; }
+
+        public sealed override int SaveChanges()
+        {
+            throw new NotImplementedException("Do not call SaveChanges on a readonly db context.");
+        }
+
+        public sealed override Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
+        {
+            throw new NotImplementedException("Do not call SaveChangesAsync on a readonly db context.");
+        }
+
+        public sealed override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+        {
+            throw new NotImplementedException("Do not call SaveChangesAsync on a readonly db context.");
+        }
+
+        IQueryable<ReadOnlyDepartment> IReadOnlyMyDbContext.Departments => Departments;
+        IQueryable<TEntity> IReadOnlyMyDbContext.Set<TEntity>()
+            where TEntity : class => Set<TEntity>();
+    }
+}
+""";
+
+        var expectedInterface = """
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using MyApp.Entities;
+using System;
+#nullable enable
+using System.Collections.Generic;
+using System.Linq;
+
+namespace MyApp.Entities.Generated
+{
+    public partial interface IReadOnlyMyDbContext : IDisposable, IAsyncDisposable
+    {
+        IQueryable<ReadOnlyDepartment> Departments { get; }
+
+        IQueryable<TEntity> Set<TEntity>()
+            where TEntity : class;
+        DatabaseFacade Database { get; }
+    }
+}
+""";
+
+        var test = new VerifyCS.Test
+        {
+            TestState =
+            {
+                Sources = { inputSource },
+                AdditionalReferences =
+                {
+                    MetadataReference.CreateFromFile(typeof(DbContext).Assembly.Location)
+                },
+                GeneratedSources =
+                {
+                    (typeof(ReadonlyDbContextGenerator.ReadOnlyDbContextGenerator), "ReadOnlyDepartment.g.cs", expectedDepartment),
+                    (typeof(ReadonlyDbContextGenerator.ReadOnlyDbContextGenerator), "ReadOnlyMyDbContext.g.cs", expectedDbContext),
+                    (typeof(ReadonlyDbContextGenerator.ReadOnlyDbContextGenerator), "IReadOnlyMyDbContext.g.cs", expectedInterface)
+                }
+            },
+        };
+
+        test.SolutionTransforms.Add((solution, projectId) =>
+        {
+            var project = solution.GetProject(projectId);
+            var options = (CSharpCompilationOptions)project.CompilationOptions;
+            options = options.WithSpecificDiagnosticOptions(options.SpecificDiagnosticOptions.SetItems(new Dictionary<string, ReportDiagnostic>
+            {
+                ["CS8618"] = ReportDiagnostic.Suppress
+            }));
+            return project.WithCompilationOptions(options).Solution;
+        });
+
+        await test.RunAsync();
+    }
+
+    [Fact]
+    public async Task NullableNavigationCollectionBecomesNullableReadOnlyCollectionWithReadonlyElement()
+    {
+        var inputSource = """
+                          #nullable enable
+                          using System.Collections.Generic;
+                          using Microsoft.EntityFrameworkCore;
+
+                          namespace MyApp.Entities
+                          {
+                              public class Translation
+                              {
+                                  public string LanguageCode { get; set; }
+                                  public string Value { get; set; }
+                              }
+
+                              public class SettingKey
+                              {
+                                  public IList<Translation>? Link { get; set; }
+                              }
+
+                              public class MyDbContext : DbContext
+                              {
+                                  public DbSet<SettingKey> SettingKeys { get; set; }
+                              }
+                          }
+                          """;
+
+        var expectedTranslation = """
+using Microsoft.EntityFrameworkCore;
+using MyApp.Entities;
+using System;
+#nullable enable
+using System.Collections.Generic;
+
+namespace MyApp.Entities.Generated
+{
+    public class ReadOnlyTranslation
+    {
+        public string LanguageCode { get; init; }
+
+        public string Value { get; init; }
+    }
+}
+""";
+
+        var expectedSettingKey = """
+using Microsoft.EntityFrameworkCore;
+using MyApp.Entities;
+using System;
+#nullable enable
+using System.Collections.Generic;
+
+namespace MyApp.Entities.Generated
+{
+    public class ReadOnlySettingKey
+    {
+        public IReadOnlyCollection<ReadOnlyTranslation>? Link { get; init; }
+    }
+}
+""";
+
+        var expectedDbContext = """
+using Microsoft.EntityFrameworkCore;
+using MyApp.Entities;
+using System;
+#nullable enable
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
+
+namespace MyApp.Entities.Generated
+{
+    public partial class ReadOnlyMyDbContext : DbContext, IReadOnlyMyDbContext
+    {
+        public DbSet<ReadOnlySettingKey> SettingKeys { get; set; }
+
+        public sealed override int SaveChanges()
+        {
+            throw new NotImplementedException("Do not call SaveChanges on a readonly db context.");
+        }
+
+        public sealed override Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
+        {
+            throw new NotImplementedException("Do not call SaveChangesAsync on a readonly db context.");
+        }
+
+        public sealed override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+        {
+            throw new NotImplementedException("Do not call SaveChangesAsync on a readonly db context.");
+        }
+
+        IQueryable<ReadOnlySettingKey> IReadOnlyMyDbContext.SettingKeys => SettingKeys;
+        IQueryable<TEntity> IReadOnlyMyDbContext.Set<TEntity>()
+            where TEntity : class => Set<TEntity>();
+    }
+}
+""";
+
+        var expectedInterface = """
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using MyApp.Entities;
+using System;
+#nullable enable
+using System.Collections.Generic;
+using System.Linq;
+
+namespace MyApp.Entities.Generated
+{
+    public partial interface IReadOnlyMyDbContext : IDisposable, IAsyncDisposable
+    {
+        IQueryable<ReadOnlySettingKey> SettingKeys { get; }
+
+        IQueryable<TEntity> Set<TEntity>()
+            where TEntity : class;
+        DatabaseFacade Database { get; }
+    }
+}
+""";
+
+        var test = new VerifyCS.Test
+        {
+            TestState =
+            {
+                Sources = { inputSource },
+                AdditionalReferences =
+                {
+                    MetadataReference.CreateFromFile(typeof(DbContext).Assembly.Location)
+                },
+                GeneratedSources =
+                {
+                    (typeof(ReadonlyDbContextGenerator.ReadOnlyDbContextGenerator), "ReadOnlySettingKey.g.cs", expectedSettingKey),
+                    (typeof(ReadonlyDbContextGenerator.ReadOnlyDbContextGenerator), "ReadOnlyTranslation.g.cs", expectedTranslation),
+                    (typeof(ReadonlyDbContextGenerator.ReadOnlyDbContextGenerator), "ReadOnlyMyDbContext.g.cs", expectedDbContext),
+                    (typeof(ReadonlyDbContextGenerator.ReadOnlyDbContextGenerator), "IReadOnlyMyDbContext.g.cs", expectedInterface)
+                }
+            },
+        };
+
+        test.SolutionTransforms.Add((solution, projectId) =>
+        {
+            var project = solution.GetProject(projectId);
+            var options = (CSharpCompilationOptions)project.CompilationOptions;
+            options = options.WithSpecificDiagnosticOptions(options.SpecificDiagnosticOptions.SetItems(new Dictionary<string, ReportDiagnostic>
+            {
+                ["CS8618"] = ReportDiagnostic.Suppress
+            }));
+            return project.WithCompilationOptions(options).Solution;
+        });
 
         await test.RunAsync();
     }

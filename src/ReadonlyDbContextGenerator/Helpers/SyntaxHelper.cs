@@ -13,14 +13,6 @@ public class SyntaxHelper
         return syntax is ClassDeclarationSyntax or InterfaceDeclarationSyntax ? syntax as TypeDeclarationSyntax : null;
     }
 
-    public static TypeDeclarationSyntax FindEntityClassOrInterface(TypeSyntax entityType, Compilation compilation)
-    {
-        var sm = compilation.GetSemanticModel(entityType.SyntaxTree);
-        var typeSymbol = sm.GetSymbolInfo(entityType).Symbol;
-
-        return FindEntityClassOrInterface(typeSymbol);
-    }
-
     public static TypeDeclarationSyntax FindEntityClassOrInterface(BaseTypeSyntax entityType, Compilation compilation)
     {
         var sm = compilation.GetSemanticModel(entityType.SyntaxTree);

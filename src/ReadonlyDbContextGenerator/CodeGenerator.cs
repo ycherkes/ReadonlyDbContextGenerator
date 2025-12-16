@@ -158,43 +158,36 @@ public class CodeGenerator
             {
                 if (member is PropertyDeclarationSyntax prop)
                 {
-                    // Handle navigation properties
-                    var navProp = entity.NavigationProperties?.FirstOrDefault(p => p.Name == prop.Identifier.Text);
-                    if (navProp != null)
-                    {
-                        var navigationTypeSyntax = GetGenericType(prop.Type);
-                        var navigationTypeSymbol = navProp.Type is INamedTypeSymbol { IsGenericType: true } namedType ? namedType.TypeArguments[0] : navProp.Type;
+                    var declaredSymbol = sm.GetDeclaredSymbol(prop);
+                    var propTypeSymbol = declaredSymbol?.Type ?? sm.GetTypeInfo(prop.Type).Type;
 
-                        var newNavigationType = navigationTypeSymbol.IsReferenceType
-                            ? GetReadonlyTypeName(navigationTypeSymbol.Name)
-                            : navigationTypeSymbol.Name;
+                    // Handle navigation properties/entities (including collections and nullable refs)
+                    var (navigationTargetSymbol, isCollection) = GetNavigationTargetType(propTypeSymbol);
+                    navigationTargetSymbol ??= entity.NavigationProperties?.FirstOrDefault(p => p.Name == prop.Identifier.Text)?.Type;
+
+                    if (navigationTargetSymbol != null && IsEntityType(navigationTargetSymbol, allEntities))
+                    {
+                        var isNullableReference =
+                            (propTypeSymbol?.NullableAnnotation == NullableAnnotation.Annotated && propTypeSymbol.IsReferenceType)
+                            || (navigationTargetSymbol.NullableAnnotation == NullableAnnotation.Annotated && navigationTargetSymbol.IsReferenceType);
 
                         // If the navigation target is another entity, ensure it's added to the additional processing list
-                        if (!processedEntities.Contains(navigationTypeSymbol.Name) && allEntities.All(x => x.SyntaxNode.Identifier.Text != navigationTypeSymbol.Name))
+                        AddAdditionalEntity(navigationTargetSymbol, processedEntities, allEntities, additionalEntitiesToProcess, compilation);
+
+                        var newNavigationType = navigationTargetSymbol.IsReferenceType
+                            ? GetReadonlyTypeName(navigationTargetSymbol.Name)
+                            : navigationTargetSymbol.Name;
+
+                        TypeSyntax newTypeSyntax = isCollection
+                            ? SyntaxFactory.ParseTypeName($"IReadOnlyCollection<{newNavigationType}>")
+                            : SyntaxFactory.ParseTypeName(newNavigationType);
+
+                        if (isNullableReference)
                         {
-                            // Dynamically find the entity class across all syntax trees
-                            var referencedEntityClass = SyntaxHelper.FindEntityClassOrInterface(navigationTypeSyntax, compilation);
-                            if (referencedEntityClass != null)
-                            {
-                                var referencedEntityInfo = CreateEntityInfoFromSyntaxTree(referencedEntityClass, compilation);
-                                if (!allEntities.Contains(referencedEntityInfo))
-                                    additionalEntitiesToProcess.Add(referencedEntityInfo);
-                            }
+                            newTypeSyntax = SyntaxFactory.NullableType(newTypeSyntax);
                         }
 
-                        if (prop.Type is GenericNameSyntax)
-                        {
-                            var type = sm.GetTypeInfo(prop.Type);
-                            if (SymbolHelper.IsCollection(type.Type?.OriginalDefinition))
-                            {
-                                prop = prop.WithType(
-                                    SyntaxFactory.ParseTypeName($"IReadOnlyCollection<{newNavigationType}>"));
-                            }
-                        }
-                        else
-                        {
-                            prop = prop.WithType(SyntaxFactory.ParseTypeName(newNavigationType));
-                        }
+                        prop = prop.WithType(newTypeSyntax);
                     }
 
                     // Handle scalar properties and make them init-only
@@ -216,6 +209,8 @@ public class CodeGenerator
                             SyntaxFactory.AccessorList(
                                 SyntaxFactory.List(accessorsWithoutSet)));
                     }
+
+                    return prop;
                 }
 
                 return member; // Leave unchanged if not a property
@@ -315,6 +310,77 @@ public class CodeGenerator
         missingUsings.Sort((a, b) => string.Compare(a.Name?.ToString(), b.Name?.ToString(), StringComparison.Ordinal));
 
         return missingUsings;
+    }
+
+    private static (ITypeSymbol navigationTarget, bool isCollection) GetNavigationTargetType(ITypeSymbol typeSymbol)
+    {
+        if (typeSymbol is INamedTypeSymbol { IsGenericType: true } namedType &&
+            SymbolHelper.IsCollection(namedType.OriginalDefinition))
+        {
+            return (namedType.TypeArguments[0], true);
+        }
+
+        return (typeSymbol, false);
+    }
+
+    private static void AddAdditionalEntity(ITypeSymbol navigationTargetSymbol,
+        ISet<string> processedEntities,
+        IReadOnlyList<EntityInfo> allEntities,
+        List<EntityInfo> additionalEntitiesToProcess,
+        Compilation compilation)
+    {
+        if (navigationTargetSymbol == null)
+        {
+            return;
+        }
+
+        if (processedEntities.Contains(navigationTargetSymbol.Name))
+        {
+            return;
+        }
+
+        if (allEntities.Any(x => SymbolEqualityComparer.Default.Equals(x.Type, navigationTargetSymbol)))
+        {
+            return;
+        }
+
+        if (additionalEntitiesToProcess.Any(ae => SymbolEqualityComparer.Default.Equals(ae.Type, navigationTargetSymbol)))
+        {
+            return;
+        }
+
+        var referencedEntityClass = SyntaxHelper.FindEntityClassOrInterface(navigationTargetSymbol);
+        if (referencedEntityClass == null)
+        {
+            return;
+        }
+
+        var referencedEntityInfo = CreateEntityInfoFromSyntaxTree(referencedEntityClass, compilation);
+        if (referencedEntityInfo != null)
+        {
+            additionalEntitiesToProcess.Add(referencedEntityInfo);
+        }
+    }
+
+    private static bool IsEntityType(ITypeSymbol typeSymbol, IReadOnlyList<EntityInfo> allEntities)
+    {
+        if (typeSymbol == null)
+        {
+            return false;
+        }
+
+        if (allEntities.Any(x => SymbolEqualityComparer.Default.Equals(x.Type, typeSymbol)))
+        {
+            return true;
+        }
+
+        // If we can find its syntax, treat it as an entity we can generate
+        var syntax = SyntaxHelper.FindEntityClassOrInterface(typeSymbol);
+        if (syntax != null)
+        {
+            return true;
+        }
+        return false;
     }
 
     private static BaseNamespaceDeclarationSyntax GetNamespace(SyntaxNode node)
@@ -476,11 +542,6 @@ public class CodeGenerator
         return $"ReadOnly{typeName}";
     }
 
-    private static TypeSyntax GetGenericType(TypeSyntax type)
-    {
-        return type is GenericNameSyntax gns ? gns.TypeArgumentList.Arguments[0] : type;
-    }
-
     private static EntityInfo CreateEntityInfoFromSyntaxTree(TypeDeclarationSyntax entityTypeSyntax, Compilation compilation)
     {
         var model = compilation.GetSemanticModel(entityTypeSyntax.SyntaxTree);
@@ -597,18 +658,24 @@ public class CodeGenerator
         // Define the methods
         var methods = new[]
         {
-            @"public sealed override int SaveChanges()
-              {
-                  throw new NotImplementedException(""Do not call SaveChanges on a readonly db context."");
-              }",
-            @"public sealed override Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
-              {
-                  throw new NotImplementedException(""Do not call SaveChangesAsync on a readonly db context."");
-              }",
-            @"public sealed override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
-              {
-                  throw new NotImplementedException(""Do not call SaveChangesAsync on a readonly db context."");
-              }"
+            """
+            public sealed override int SaveChanges()
+            {
+                throw new NotImplementedException("Do not call SaveChanges on a readonly db context.");
+            }
+            """,
+            """
+            public sealed override Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
+            {
+                throw new NotImplementedException("Do not call SaveChangesAsync on a readonly db context.");
+            }
+            """,
+            """
+            public sealed override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+            {
+                throw new NotImplementedException("Do not call SaveChangesAsync on a readonly db context.");
+            }
+            """
         };
 
         return _readonlyDbContextMethods = methods.Select(m => SyntaxFactory.ParseMemberDeclaration(m)?.NormalizeWhitespace()).ToArray();
