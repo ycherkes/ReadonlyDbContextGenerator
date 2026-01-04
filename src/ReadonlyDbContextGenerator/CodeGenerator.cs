@@ -7,19 +7,13 @@ using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
+using ReadonlyDbContextGenerator.Diagnostics;
 
 namespace ReadonlyDbContextGenerator;
 
 public class CodeGenerator
 {
     private static MemberDeclarationSyntax[] _readonlyDbContextMethods;
-    private static readonly DiagnosticDescriptor SkippedExternalDbSet = new(
-        id: "RDCTX001",
-        title: "Readonly DbContext skipping external DbSet",
-        messageFormat: "DbContext '{0}' DbSet '{1}' uses external entity type '{2}' and is skipped from readonly generation.",
-        category: "SourceGeneration",
-        defaultSeverity: DiagnosticSeverity.Warning,
-        isEnabledByDefault: true);
 
     internal static void GenerateReadOnlyCode(SourceProductionContext context, AggregatedInfo info)
     {
@@ -30,7 +24,7 @@ public class CodeGenerator
             foreach (var external in dbContext.ExternalEntities)
             {
                 var diagnostic = Diagnostic.Create(
-                    SkippedExternalDbSet,
+                    DiagnosticDescriptors.SkippedExternalDbSet,
                     external.Location,
                     dbContext.Identifier.Text,
                     external.DbSetProperty,

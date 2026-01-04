@@ -1,7 +1,9 @@
 ﻿using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
+using ReadonlyDbContextGenerator.Diagnostics;
 using ReadonlyDbContextGenerator.Helpers;
 using ReadonlyDbContextGenerator.Model;
+using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
@@ -65,7 +67,20 @@ public class ReadOnlyDbContextGenerator : IIncrementalGenerator
                 return new AggregatedInfo(dbContexts!, configs, aggregatedEntities, compilationInfo!.Compilation);
             });
 
-        context.RegisterSourceOutput(aggregatedInfo, CodeGenerator.GenerateReadOnlyCode);
+        context.RegisterSourceOutput(aggregatedInfo, static (spc, aggregated) =>
+        {
+            try
+            {
+                CodeGenerator.GenerateReadOnlyCode(spc, aggregated);
+            }
+            catch (Exception e)
+            {
+                CrashDiagnosticsReporter.Report(spc, e);
+#if DEBUG
+                throw;
+#endif
+            }
+        });
     }
 
     private static EntityConfigInfo ExtractEntityConfigInfo(GeneratorSyntaxContext context, CompilationContext compilationInfo)
