@@ -6,6 +6,7 @@ using ReadonlyDbContextGenerator.Model;
 using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
+using System.Diagnostics;
 using System.Linq;
 using ReadonlyDbContextGenerator.Diagnostics;
 
@@ -43,8 +44,8 @@ public class CodeGenerator
         foreach (var config in info.Configurations)
         {
             var configSyntax = ModifyEntityConfigSyntax(typeNamesForRewrite, config.SyntaxNode!, info.Compilation, commonNamespace);
-            var readonlyEntityConfigTypeName = GetReadonlyTypeName(config.EntityType.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat));
-            context.AddSource($"{readonlyEntityConfigTypeName}Configuration.g.cs", configSyntax);
+            var readonlyEntityConfigTypeName = GetReadonlyTypeName(config.SyntaxNode.Identifier.Text);
+            context.AddSource($"{readonlyEntityConfigTypeName}.g.cs", configSyntax);
             processedTypes.Add(config.SyntaxNode.Identifier.Text);
         }
 
