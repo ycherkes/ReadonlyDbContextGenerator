@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 	<PropertyGroup>
 		<Authors>Yevhen Cherkes</Authors>
-		<Copyright>Yevhen Cherkes 2024-2025</Copyright>
+		<Copyright>Yevhen Cherkes 2024 - $([System.DateTime]::Now.Year)</Copyright>
 		<DevelopmentDependency>true</DevelopmentDependency>
 		<Description>Creates read-only twins of EF Core DbContext and entities.</Description>
 		<EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>
@@ -19,12 +19,12 @@
 		<RepositoryUrl>https://github.com/ycherkes/ReadonlyDbContextGenerator</RepositoryUrl>
 		<TargetFramework>netstandard2.0</TargetFramework>
 		<Title>Readonly DbContext Generator</Title>
-		<Version>0.1.5</Version>
+		<Version>0.1.6</Version>
 	</PropertyGroup>
 
 	<ItemGroup>
 		<None Include="$(OutputPath)\$(AssemblyName).dll" Pack="true" PackagePath="analyzers/dotnet/cs" Visible="false" />
-		<None Include="..\..\Readme.md">
+		<None Include="..\..\README.md">
 		  <Pack>True</Pack>
 		  <PackagePath>\</PackagePath>
 		</None>

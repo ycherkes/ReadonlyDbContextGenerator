@@ -157,6 +157,9 @@ public class ReadOnlyDbContextGenerator : IIncrementalGenerator
             .Where(ei => ei != null)
             .ToList();
 
+        var ownedEntities = ExtractOwnedEntityInfos(classDecl, semanticModel, entities);
+        entities.AddRange(ownedEntities);
+
         var entityTypes = entities.Select(e => e.Type).ToImmutableHashSet(SymbolEqualityComparer.Default);
 
         return new DbContextInfo
@@ -169,6 +172,69 @@ public class ReadOnlyDbContextGenerator : IIncrementalGenerator
             EntityTypes = entityTypes,
             SyntaxNode = classDecl
         };
+    }
+
+    private static List<EntityInfo> ExtractOwnedEntityInfos(ClassDeclarationSyntax dbContextClass,
+        SemanticModel semanticModel,
+        IReadOnlyCollection<EntityInfo> existingEntities)
+    {
+        var knownEntityTypes = existingEntities
+            .Select(e => e.Type)
+            .Where(t => t != null)
+            .ToImmutableHashSet(SymbolEqualityComparer.Default);
+
+        var ownedEntityTypes = new HashSet<INamedTypeSymbol>(SymbolEqualityComparer.Default);
+
+        foreach (var invocation in dbContextClass.DescendantNodes().OfType<InvocationExpressionSyntax>())
+        {
+            var symbol = semanticModel.GetSymbolInfo(invocation).Symbol as IMethodSymbol;
+            symbol ??= semanticModel.GetSymbolInfo(invocation).CandidateSymbols.OfType<IMethodSymbol>().FirstOrDefault();
+
+            if (symbol == null || !symbol.IsGenericMethod)
+            {
+                continue;
+            }
+
+            if (symbol.Name is not ("OwnsOne" or "OwnsMany" or "Owned"))
+            {
+                continue;
+            }
+
+            if (symbol.ContainingNamespace?.ToDisplayString() is not string symbolNamespace ||
+                !symbolNamespace.StartsWith("Microsoft.EntityFrameworkCore", StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            foreach (var typeArgument in symbol.TypeArguments.OfType<INamedTypeSymbol>())
+            {
+                if (knownEntityTypes.Contains(typeArgument))
+                {
+                    continue;
+                }
+
+                ownedEntityTypes.Add(typeArgument);
+            }
+        }
+
+        var ownedEntities = new List<EntityInfo>();
+
+        foreach (var ownedEntityType in ownedEntityTypes)
+        {
+            var ownedEntitySyntax = SyntaxHelper.FindEntityClassOrInterface(ownedEntityType);
+            if (ownedEntitySyntax == null)
+            {
+                continue;
+            }
+
+            var ownedEntityInfo = ExtractEntityInfo(ownedEntityType, ownedEntitySyntax);
+            if (ownedEntityInfo != null)
+            {
+                ownedEntities.Add(ownedEntityInfo);
+            }
+        }
+
+        return ownedEntities;
     }
 
     private static EntityInfo ExtractEntityInfo(ITypeSymbol entityType, TypeDeclarationSyntax entitySyntax = null)

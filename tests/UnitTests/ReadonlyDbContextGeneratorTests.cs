@@ -672,4 +672,165 @@ namespace MyApp.Entities.Generated
 
         await test.RunAsync();
     }
+
+    [Fact]
+    public async Task GeneratesReadOnlyOwnedTypeConfiguredInOnModelCreating()
+    {
+        var inputSource = """
+                          #nullable enable
+                          using Microsoft.EntityFrameworkCore;
+
+                          namespace MyApp.Entities
+                          {
+                              public class Order
+                              {
+                                  public int Id { get; set; }
+                              }
+
+                              public class ShippingAddress
+                              {
+                                  public string Street { get; set; }
+                              }
+
+                              public class MyDbContext : DbContext
+                              {
+                                  public DbSet<Order> Orders { get; set; }
+
+                                  protected override void OnModelCreating(ModelBuilder modelBuilder)
+                                  {
+                                      modelBuilder.Entity<Order>().OwnsOne<ShippingAddress>("ShippingAddress");
+                                  }
+                              }
+                          }
+                          """;
+
+        var expectedOrder = """
+#nullable enable
+using Microsoft.EntityFrameworkCore;
+using MyApp.Entities;
+using System;
+using System.Collections.Generic;
+
+namespace MyApp.Entities.Generated
+{
+    public class ReadOnlyOrder
+    {
+        public int Id { get; init; }
+    }
+}
+""";
+
+        var expectedShippingAddress = """
+#nullable enable
+using Microsoft.EntityFrameworkCore;
+using MyApp.Entities;
+using System;
+using System.Collections.Generic;
+
+namespace MyApp.Entities.Generated
+{
+    public class ReadOnlyShippingAddress
+    {
+        public string Street { get; init; }
+    }
+}
+""";
+
+        var expectedDbContext = """
+#nullable enable
+using Microsoft.EntityFrameworkCore;
+using MyApp.Entities;
+using System;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
+
+namespace MyApp.Entities.Generated
+{
+    public partial class ReadOnlyMyDbContext : DbContext, IReadOnlyMyDbContext
+    {
+        public DbSet<ReadOnlyOrder> Orders { get; set; }
+
+        protected override void OnModelCreating(ModelBuilder modelBuilder)
+        {
+            modelBuilder.Entity<ReadOnlyOrder>().OwnsOne<ReadOnlyShippingAddress>("ShippingAddress");
+        }
+
+        public sealed override int SaveChanges()
+        {
+            throw new NotImplementedException("Do not call SaveChanges on a readonly db context.");
+        }
+
+        public sealed override Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
+        {
+            throw new NotImplementedException("Do not call SaveChangesAsync on a readonly db context.");
+        }
+
+        public sealed override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+        {
+            throw new NotImplementedException("Do not call SaveChangesAsync on a readonly db context.");
+        }
+
+        IQueryable<ReadOnlyOrder> IReadOnlyMyDbContext.Orders => Orders;
+        IQueryable<TEntity> IReadOnlyMyDbContext.Set<TEntity>()
+            where TEntity : class => Set<TEntity>();
+    }
+}
+""";
+
+        var expectedInterface = """
+#nullable enable
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using MyApp.Entities;
+using System;
+using System.Linq;
+
+namespace MyApp.Entities.Generated
+{
+    public partial interface IReadOnlyMyDbContext : IDisposable, IAsyncDisposable
+    {
+        IQueryable<ReadOnlyOrder> Orders { get; }
+
+        IQueryable<TEntity> Set<TEntity>()
+            where TEntity : class;
+        DatabaseFacade Database { get; }
+    }
+}
+""";
+
+        static string ToCrLf(string source) => source.Replace("\r\n", "\n").Replace("\n", "\r\n");
+
+        var test = new VerifyCS.Test
+        {
+            TestState =
+            {
+                Sources = { inputSource },
+                AdditionalReferences =
+                {
+                    MetadataReference.CreateFromFile(typeof(DbContext).Assembly.Location)
+                },
+                GeneratedSources =
+                {
+                    (typeof(ReadonlyDbContextGenerator.ReadOnlyDbContextGenerator), "ReadOnlyOrder.g.cs", ToCrLf(expectedOrder)),
+                    (typeof(ReadonlyDbContextGenerator.ReadOnlyDbContextGenerator), "ReadOnlyShippingAddress.g.cs", ToCrLf(expectedShippingAddress)),
+                    (typeof(ReadonlyDbContextGenerator.ReadOnlyDbContextGenerator), "ReadOnlyMyDbContext.g.cs", ToCrLf(expectedDbContext)),
+                    (typeof(ReadonlyDbContextGenerator.ReadOnlyDbContextGenerator), "IReadOnlyMyDbContext.g.cs", ToCrLf(expectedInterface))
+                }
+            },
+        };
+
+        test.SolutionTransforms.Add((solution, projectId) =>
+        {
+            var project = solution.GetProject(projectId);
+            var options = (CSharpCompilationOptions)project.CompilationOptions;
+            options = options.WithSpecificDiagnosticOptions(options.SpecificDiagnosticOptions.SetItems(new Dictionary<string, ReportDiagnostic>
+            {
+                ["CS8618"] = ReportDiagnostic.Suppress
+            }));
+            return project.WithCompilationOptions(options).Solution;
+        });
+
+        await test.RunAsync();
+    }
 }
