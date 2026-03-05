@@ -10,7 +10,7 @@ public class SyntaxHelper
     public static TypeDeclarationSyntax FindEntityClassOrInterface(ISymbol entityType)
     {
         var syntax = entityType?.DeclaringSyntaxReferences.FirstOrDefault()?.GetSyntax();
-        return syntax is ClassDeclarationSyntax or InterfaceDeclarationSyntax ? syntax as TypeDeclarationSyntax : null;
+        return syntax as TypeDeclarationSyntax;
     }
 
     public static TypeDeclarationSyntax FindEntityClassOrInterface(BaseTypeSyntax entityType, Compilation compilation)

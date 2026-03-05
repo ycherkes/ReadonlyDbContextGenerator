@@ -833,4 +833,149 @@ namespace MyApp.Entities.Generated
 
         await test.RunAsync();
     }
+
+    [Fact]
+    public async Task GeneratesReadOnlyEntityForRecordDbSetEntity()
+    {
+        var inputSource = """
+                          using Microsoft.EntityFrameworkCore;
+
+                          namespace MyApp.Entities
+                          {
+                              public record Reservation
+                              {
+                                  public int Id { get; set; }
+
+                                  public Reservation(int id)
+                                  {
+                                      Id = id;
+                                  }
+                              }
+
+                              public class MyDbContext : DbContext
+                              {
+                                  public DbSet<Reservation> Reservations { get; set; }
+
+                                  protected override void OnModelCreating(ModelBuilder modelBuilder)
+                                  {
+                                      modelBuilder.Entity<Reservation>().HasData(new Reservation(7) { Id = 1 });
+                                  }
+                              }
+                          }
+                          """;
+
+        var expectedReservation = """
+using Microsoft.EntityFrameworkCore;
+using MyApp.Entities;
+using System;
+using System.Collections.Generic;
+
+namespace MyApp.Entities.Generated
+{
+    public record ReadOnlyReservation
+    {
+        public int Id { get; init; }
+
+        public ReadOnlyReservation(int id)
+        {
+            Id = id;
+        }
+    }
+}
+""";
+
+        var expectedDbContext = """
+using Microsoft.EntityFrameworkCore;
+using MyApp.Entities;
+using System;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
+
+namespace MyApp.Entities.Generated
+{
+    public partial class ReadOnlyMyDbContext : DbContext, IReadOnlyMyDbContext
+    {
+        public DbSet<ReadOnlyReservation> Reservations { get; set; }
+
+        protected override void OnModelCreating(ModelBuilder modelBuilder)
+        {
+            modelBuilder.Entity<ReadOnlyReservation>().HasData(new ReadOnlyReservation(7) { Id = 1 });
+        }
+
+        public sealed override int SaveChanges()
+        {
+            throw new NotImplementedException("Do not call SaveChanges on a readonly db context.");
+        }
+
+        public sealed override Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
+        {
+            throw new NotImplementedException("Do not call SaveChangesAsync on a readonly db context.");
+        }
+
+        public sealed override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+        {
+            throw new NotImplementedException("Do not call SaveChangesAsync on a readonly db context.");
+        }
+
+        IQueryable<ReadOnlyReservation> IReadOnlyMyDbContext.Reservations => Reservations;
+        IQueryable<TEntity> IReadOnlyMyDbContext.Set<TEntity>()
+            where TEntity : class => Set<TEntity>();
+    }
+}
+""";
+
+        var expectedInterface = """
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using MyApp.Entities;
+using System;
+using System.Linq;
+
+namespace MyApp.Entities.Generated
+{
+    public partial interface IReadOnlyMyDbContext : IDisposable, IAsyncDisposable
+    {
+        IQueryable<ReadOnlyReservation> Reservations { get; }
+
+        IQueryable<TEntity> Set<TEntity>()
+            where TEntity : class;
+        DatabaseFacade Database { get; }
+    }
+}
+""";
+
+        static string ToCrLf(string source) => source.Replace("\r\n", "\n").Replace("\n", "\r\n");
+
+        var test = new VerifyCS.Test
+        {
+            TestState =
+            {
+                Sources = { inputSource },
+                AdditionalReferences =
+                {
+                    MetadataReference.CreateFromFile(typeof(DbContext).Assembly.Location)
+                },
+                GeneratedSources =
+                {
+                    (typeof(ReadonlyDbContextGenerator.ReadOnlyDbContextGenerator), "ReadOnlyReservation.g.cs", ToCrLf(expectedReservation)),
+                    (typeof(ReadonlyDbContextGenerator.ReadOnlyDbContextGenerator), "ReadOnlyMyDbContext.g.cs", ToCrLf(expectedDbContext)),
+                    (typeof(ReadonlyDbContextGenerator.ReadOnlyDbContextGenerator), "IReadOnlyMyDbContext.g.cs", ToCrLf(expectedInterface))
+                }
+            },
+        };
+
+        test.SolutionTransforms.Add((solution, projectId) =>
+        {
+            var project = solution.GetProject(projectId);
+            var options = (CSharpCompilationOptions)project.CompilationOptions;
+            options = options.WithSpecificDiagnosticOptions(options.SpecificDiagnosticOptions.SetItems(new Dictionary<string, ReportDiagnostic>
+            {
+                ["CS8618"] = ReportDiagnostic.Suppress
+            }));
+            return project.WithCompilationOptions(options).Solution;
+        });
+
+        await test.RunAsync();
+    }
 }
