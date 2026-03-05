@@ -211,11 +211,23 @@ public class CodeGenerator
             });
 
         // Remove methods from the entity (DDD approach often use them in domain rich model)
-        modifiedMembers = modifiedMembers.Where(m => m is not MethodDeclarationSyntax && m is not ConstructorDeclarationSyntax);
+        modifiedMembers = modifiedMembers.Where(m => m is not MethodDeclarationSyntax);
 
         // Update the class name to append "ReadOnly"
         var readonlyClassName = GetReadonlyTypeName(entity.SyntaxNode.Identifier.Text);
         var newIdentifier = SyntaxFactory.Identifier(readonlyClassName);
+
+        modifiedMembers = modifiedMembers.Select(member =>
+        {
+            if (member is not ConstructorDeclarationSyntax constructor)
+            {
+                return member;
+            }
+
+            var ctorIdentifier = SyntaxFactory.Identifier(readonlyClassName)
+                .WithTriviaFrom(constructor.Identifier);
+            return constructor.WithIdentifier(ctorIdentifier);
+        });
 
         // Create a new class declaration with the updated name and members
         var newEntitySyntax = entitySyntax
