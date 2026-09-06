@@ -19,3 +19,10 @@ jobs:
       - run: dotnet build ReadonlyDbContextGenerator.sln --configuration Release --nologo
       - run: dotnet test ReadonlyDbContextGenerator.sln --configuration Release --no-build --nologo
       - run: dotnet pack src/ReadonlyDbContextGenerator/ReadonlyDbContextGenerator.csproj --configuration Release --no-build --no-restore --nologo
+      - name: Upload NuGet package
+        uses: actions/upload-artifact@v4
+        with:
+          name: ReadonlyDbContextGenerator-${{ matrix.os }}
+          path: src/ReadonlyDbContextGenerator/bin/Release/*.nupkg
+          if-no-files-found: error
+          retention-days: 14
