@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## v0.2.0
+- Blocked all `SaveChanges` overloads in generated contexts, including `SaveChanges(bool)`.
+- Generated `NotSupportedException` for blocked save operations.
+- Avoided generator failures in projects with no discovered `DbContext` and added support for indirect `DbContext` inheritance.
+- Corrected crash diagnostic truncation and package README casing.
+- Refactored incremental discovery so class syntax candidates are cached independently from compilation-dependent semantic analysis.
+
 ## v0.1.7
 - Fixed constructor handling in readonly entities to properly update constructor identifiers to match the readonly class name.
 - Simplified syntax helper to use `as TypeDeclarationSyntax` instead of explicit type checking, improving support for record entities.

@@ -1,5 +1,6 @@
 ﻿using Microsoft.CodeAnalysis;
 using ReadonlyDbContextGenerator.Extensions;
+using System.Linq;
 
 namespace ReadonlyDbContextGenerator.Helpers;
 
@@ -21,6 +22,10 @@ public class SymbolHelper
                || typeSymbol.IsList(out _)
                || typeSymbol.IsArray(out _)
                || typeSymbol.IsCollection(out _)
-               || typeSymbol.IsEnumerable(out _);
+               || typeSymbol.IsEnumerable(out _)
+               || typeSymbol is INamedTypeSymbol { IsGenericType: true } namedType
+                   && namedType.AllInterfaces.Any(interfaceType =>
+                       interfaceType.SpecialType == SpecialType.System_Collections_Generic_IEnumerable_T
+                       && interfaceType.TypeArguments.Length == 1);
     }
 }

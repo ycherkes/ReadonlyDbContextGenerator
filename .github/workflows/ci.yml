@@ -1,0 +1,21 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build-test-pack:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - run: dotnet build ReadonlyDbContextGenerator.sln --configuration Release --nologo
+      - run: dotnet test ReadonlyDbContextGenerator.sln --configuration Release --no-build --nologo
+      - run: dotnet pack src/ReadonlyDbContextGenerator/ReadonlyDbContextGenerator.csproj --configuration Release --no-build --no-restore --nologo

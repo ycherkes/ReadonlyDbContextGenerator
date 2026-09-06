@@ -47,6 +47,14 @@ See [CHANGELOG.md](https://github.com/ycherkes/ReadonlyDbContextGenerator/blob/m
    var readOnlyDbContext = new ReadOnlyMyDbContext();
    ```
 
+## Read-only contract
+
+Generated contexts inherit from the original `DbContext` type and throw `NotSupportedException` from every `SaveChanges` and `SaveChangesAsync` overload. Generated entities expose `init` accessors, and generated interfaces expose queryable sets rather than mutable `DbSet` members.
+
+This is an application-level guard. EF Core bulk operations such as `ExecuteUpdate` and `ExecuteDelete` run directly against the database and do not call `SaveChanges`. Use database credentials with read-only permissions when writes must be prevented reliably.
+
+The generator supports entities declared in the consuming project, navigation collections, owned types configured with `OwnsOne`, `OwnsMany`, or `Owned`, record entities, and `IEntityTypeConfiguration<T>` implementations. `DbSet` properties whose entity type is defined in another assembly are skipped with diagnostic `RDCTX001`.
+
 ## Example
 
 ### Input
@@ -81,14 +89,19 @@ public class Order
 
 #### ReadOnlyMyDbContext
 ```csharp
-public partial class ReadOnlyMyDbContext : IReadOnlyMyDbContext
+public partial class ReadOnlyMyDbContext : DbContext, IReadOnlyMyDbContext
 {
     public DbSet<ReadOnlyUser> Users { get; }
     public DbSet<ReadOnlyOrder> Orders { get; }
 
-    public int SaveChanges()
+    public sealed override int SaveChanges()
     {
-        throw new NotImplementedException("Read-only context");
+        throw new NotSupportedException("Saving changes is not supported by a readonly db context.");
+    }
+
+    public sealed override int SaveChanges(bool acceptAllChangesOnSuccess)
+    {
+        throw new NotSupportedException("Saving changes is not supported by a readonly db context.");
     }
 
     IQueryable<ReadOnlyUser> IReadOnlyMyDbContext.Users => Users;

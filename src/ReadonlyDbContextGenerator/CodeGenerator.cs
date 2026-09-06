@@ -18,6 +18,11 @@ public class CodeGenerator
     internal static void GenerateReadOnlyCode(SourceProductionContext context, AggregatedInfo info)
     {
         var commonNamespace = GetCommonRootNamespace(info);
+        var generatedTypeNames = CreateGeneratedTypeNames(info.Entities.Select(entity => entity.Type));
+        foreach (var dbContext in info.DbContexts)
+        {
+            generatedTypeNames[dbContext.TypeSymbol] = GetReadonlyTypeName(dbContext.TypeSymbol.Name);
+        }
 
         foreach (var dbContext in info.DbContexts)
         {
@@ -34,31 +39,62 @@ public class CodeGenerator
             }
         }
 
-        var processedTypes = new HashSet<string>(GenerateReadOnlyEntities(context, info, commonNamespace));
-
-        var typeNamesForRewrite = processedTypes
-            .Concat(info.DbContexts.Select(x => x.TypeSymbol.Name))
-            .ToImmutableHashSet();
+        var processedTypes = GenerateReadOnlyEntities(context, info, commonNamespace, generatedTypeNames);
 
         foreach (var config in info.Configurations)
         {
-            var configSyntax = ModifyEntityConfigSyntax(typeNamesForRewrite, config.SyntaxNode!, info.Compilation, commonNamespace);
+            var configSyntax = ModifyEntityConfigSyntax(generatedTypeNames, config.SyntaxNode!, info.Compilation, commonNamespace);
             var readonlyEntityConfigTypeName = GetReadonlyTypeName(config.SyntaxNode.Identifier.Text);
-            context.AddSource($"{readonlyEntityConfigTypeName}.g.cs", configSyntax);
-            processedTypes.Add(config.SyntaxNode.Identifier.Text);
+            context.AddSource($"{GetSourceHintName(config.EntityType, readonlyEntityConfigTypeName)}.g.cs", configSyntax);
         }
 
         foreach (var dbContext in info.DbContexts)
         {
-            processedTypes.Add(dbContext.Identifier.ToString());
-
-            var readOnlyDbContextCode = ModifyDbContextSyntax(dbContext, dbContext.SyntaxNode!, info.Compilation, commonNamespace, processedTypes.ToImmutableHashSet());
-            var readonlyDbContextFileName = GetReadonlyTypeName(dbContext.Identifier.Text);
-            context.AddSource($"{readonlyDbContextFileName}.g.cs", readOnlyDbContextCode.NormalizeWhitespace().ToFullString());
+            var readOnlyDbContextCode = ModifyDbContextSyntax(dbContext, dbContext.SyntaxNode!, info.Compilation, commonNamespace, generatedTypeNames);
+            var readonlyDbContextFileName = GetReadonlyTypeName(dbContext.TypeSymbol, generatedTypeNames);
+            context.AddSource($"{readonlyDbContextFileName}.g.cs", readOnlyDbContextCode.NormalizeWhitespace(eol: Environment.NewLine).ToFullString());
 
             var readOnlyInterfaceCode = GenerateReadOnlyDbContextInterface(readOnlyDbContextCode, dbContext, commonNamespace);
             context.AddSource($"I{readonlyDbContextFileName}.g.cs", readOnlyInterfaceCode);
         }
+    }
+
+    private static Dictionary<ITypeSymbol, string> CreateGeneratedTypeNames(IEnumerable<ITypeSymbol> types)
+    {
+        var distinctTypes = types
+            .Where(type => type != null)
+            .Select(type => type.OriginalDefinition)
+            .Distinct(SymbolEqualityComparer.Default)
+            .Cast<ITypeSymbol>()
+            .ToArray();
+
+        var duplicateNames = distinctTypes
+            .GroupBy(type => type.Name, StringComparer.Ordinal)
+            .Where(group => group.Count() > 1)
+            .Select(group => group.Key)
+            .ToImmutableHashSet(StringComparer.Ordinal);
+
+        var result = new Dictionary<ITypeSymbol, string>(SymbolEqualityComparer.Default);
+        foreach (var type in distinctTypes)
+        {
+            var suffix = duplicateNames.Contains(type.Name)
+                ? $"_{type.ContainingNamespace.ToDisplayString().Replace('.', '_')}"
+                : string.Empty;
+            result[type] = $"ReadOnly{type.Name}{suffix}";
+        }
+
+        return result;
+    }
+
+    private static string GetSourceHintName(ITypeSymbol type, string generatedName)
+    {
+        if (generatedName == GetReadonlyTypeName(type?.Name ?? string.Empty))
+        {
+            return generatedName;
+        }
+
+        var namespacePart = type?.ContainingNamespace?.ToDisplayString().Replace('.', '_');
+        return string.IsNullOrWhiteSpace(namespacePart) ? generatedName : $"{namespacePart}_{generatedName}";
     }
 
     private static string GetCommonRootNamespace(AggregatedInfo info)
@@ -98,21 +134,43 @@ public class CodeGenerator
         return prefix + ".Generated";
     }
 
-    private static string[] GenerateReadOnlyEntities(SourceProductionContext context, AggregatedInfo info, string commonNamespace)
+    private static HashSet<ITypeSymbol> GenerateReadOnlyEntities(SourceProductionContext context, AggregatedInfo info, string commonNamespace,
+        Dictionary<ITypeSymbol, string> generatedTypeNames)
     {
-        var processedEntities = new HashSet<string>();
+        var processedEntities = new HashSet<ITypeSymbol>(SymbolEqualityComparer.Default);
         var additionalEntitiesToProcess = new List<EntityInfo>();
 
         foreach (var entity in info.Entities)
         {
-            if (processedEntities.Contains(entity.SyntaxNode.Identifier.Text))
+            if (processedEntities.Contains(entity.Type.OriginalDefinition))
             {
                 continue;
             }
 
-            var readOnlyEntityCode = ModifyEntitySyntax(entity, entity.SyntaxNode!, processedEntities, info.Entities, additionalEntitiesToProcess, info.Compilation, commonNamespace);
-            var readonlyFileName = GetReadonlyTypeName(entity.SyntaxNode.Identifier.Text);
-            context.AddSource($"{readonlyFileName}.g.cs", readOnlyEntityCode);
+            var declarations = entity.Type.DeclaringSyntaxReferences
+                .Select(reference => reference.GetSyntax())
+                .OfType<TypeDeclarationSyntax>()
+                .ToArray();
+
+            foreach (var declaration in declarations)
+            {
+                var declarationInfo = new EntityInfo
+                {
+                    Type = entity.Type,
+                    NavigationProperties = entity.NavigationProperties,
+                    DbSetProperty = entity.DbSetProperty,
+                    SyntaxNode = declaration
+                };
+                var readOnlyEntityCode = ModifyEntitySyntax(declarationInfo, declaration, processedEntities, info.Entities, additionalEntitiesToProcess, info.Compilation, commonNamespace, generatedTypeNames);
+                var readonlyFileName = GetReadonlyTypeName(entity.Type, generatedTypeNames);
+                var sourceHint = GetSourceHintName(entity.Type, readonlyFileName);
+                if (declarations.Length > 1)
+                {
+                    sourceHint = $"{sourceHint}_{Array.IndexOf(declarations, declaration)}";
+                }
+
+                context.AddSource($"{sourceHint}.g.cs", readOnlyEntityCode);
+            }
         }
 
         while (additionalEntitiesToProcess.Any())
@@ -122,28 +180,33 @@ public class CodeGenerator
 
             foreach (var entity in toProcess)
             {
-                if (!processedEntities.Contains(entity.SyntaxNode.Identifier.Text))
+                if (!processedEntities.Contains(entity.Type.OriginalDefinition))
                 {
-                    var readOnlyEntityCode = ModifyEntitySyntax(entity, entity.SyntaxNode!, processedEntities, info.Entities, additionalEntitiesToProcess, info.Compilation, commonNamespace);
-                    var readonlyFileName = GetReadonlyTypeName(entity.SyntaxNode.Identifier.Text);
-                    context.AddSource($"{readonlyFileName}.g.cs", readOnlyEntityCode);
+                    if (!generatedTypeNames.ContainsKey(entity.Type.OriginalDefinition))
+                    {
+                        generatedTypeNames[entity.Type.OriginalDefinition] = GetReadonlyTypeName(entity.Type.Name);
+                    }
+                    var readOnlyEntityCode = ModifyEntitySyntax(entity, entity.SyntaxNode!, processedEntities, info.Entities, additionalEntitiesToProcess, info.Compilation, commonNamespace, generatedTypeNames);
+                    var readonlyFileName = GetReadonlyTypeName(entity.Type, generatedTypeNames);
+                    context.AddSource($"{GetSourceHintName(entity.Type, readonlyFileName)}.g.cs", readOnlyEntityCode);
                 }
             }
         }
 
-        return processedEntities.ToArray();
+        return processedEntities;
     }
 
     private static string ModifyEntitySyntax(EntityInfo entity,
         TypeDeclarationSyntax entitySyntax,
-        HashSet<string> processedEntities,
+        HashSet<ITypeSymbol> processedEntities,
         IReadOnlyList<EntityInfo> allEntities,
         List<EntityInfo> additionalEntitiesToProcess,
         Compilation compilation,
-        string commonNamespace)
+        string commonNamespace,
+        Dictionary<ITypeSymbol, string> generatedTypeNames)
     {
 
-        processedEntities.Add(entity.SyntaxNode.Identifier.Text);
+        processedEntities.Add(entity.Type.OriginalDefinition);
         var sm = compilation.GetSemanticModel(entitySyntax.SyntaxTree);
 
         // Convert properties to init-only and navigation properties to IReadOnlyCollection<ReadOnlyEntity>
@@ -169,7 +232,7 @@ public class CodeGenerator
                         AddAdditionalEntity(navigationTargetSymbol, processedEntities, allEntities, additionalEntitiesToProcess, compilation);
 
                         var newNavigationType = navigationTargetSymbol.IsReferenceType
-                            ? GetReadonlyTypeName(navigationTargetSymbol.Name)
+                            ? GetReadonlyTypeName(navigationTargetSymbol, generatedTypeNames)
                             : navigationTargetSymbol.Name;
 
                         TypeSyntax newTypeSyntax = isCollection
@@ -207,14 +270,14 @@ public class CodeGenerator
                     return prop;
                 }
 
-                return member; // Leave unchanged if not a property
+                return member;
             });
 
         // Remove methods from the entity (DDD approach often use them in domain rich model)
         modifiedMembers = modifiedMembers.Where(m => m is not MethodDeclarationSyntax);
 
         // Update the class name to append "ReadOnly"
-        var readonlyClassName = GetReadonlyTypeName(entity.SyntaxNode.Identifier.Text);
+        var readonlyClassName = GetReadonlyTypeName(entity.Type, generatedTypeNames);
         var newIdentifier = SyntaxFactory.Identifier(readonlyClassName);
 
         modifiedMembers = modifiedMembers.Select(member =>
@@ -260,7 +323,11 @@ public class CodeGenerator
                     additionalEntitiesToProcess.Add(existingAdditionalEntity);
                 }
 
-                var readonlyName = GetReadonlyTypeName(type.ToString());
+                if (!generatedTypeNames.ContainsKey(typeInfo.Type.OriginalDefinition))
+                {
+                    generatedTypeNames[typeInfo.Type.OriginalDefinition] = GetReadonlyTypeName(typeInfo.Type.Name);
+                }
+                var readonlyName = GetReadonlyTypeName(typeInfo.Type, generatedTypeNames);
                 var readonlyType = SyntaxFactory.SimpleBaseType(SyntaxFactory.ParseTypeName(readonlyName));
 
                 if (existingAdditionalEntity.SyntaxNode is InterfaceDeclarationSyntax)
@@ -285,7 +352,8 @@ public class CodeGenerator
         }
 
         string[] requiredUsings = ["System", "System.Collections.Generic"];
-        var combinedUsings = CombineUsings(entitySyntax, requiredUsings);
+        var originalEntitySyntax = SyntaxHelper.FindEntityClassOrInterface(entity.Type) ?? entitySyntax;
+        var combinedUsings = CombineUsings(originalEntitySyntax, requiredUsings);
 
         var namespaceDeclaration = SyntaxFactory.NamespaceDeclaration(SyntaxFactory.ParseName(commonNamespace))
             .AddMembers(newEntitySyntax);
@@ -295,7 +363,7 @@ public class CodeGenerator
             .AddMembers(namespaceDeclaration);
 
         // Return the modified entity code
-        return compilationUnit.NormalizeWhitespace().ToFullString();
+        return compilationUnit.NormalizeWhitespace(eol: Environment.NewLine).ToFullString();
     }
 
     private static List<UsingDirectiveSyntax> CombineUsings(SyntaxNode entitySyntax, string[] requiredUsings)
@@ -330,7 +398,7 @@ public class CodeGenerator
     }
 
     private static void AddAdditionalEntity(ITypeSymbol navigationTargetSymbol,
-        ISet<string> processedEntities,
+        ISet<ITypeSymbol> processedEntities,
         IReadOnlyList<EntityInfo> allEntities,
         List<EntityInfo> additionalEntitiesToProcess,
         Compilation compilation)
@@ -340,7 +408,7 @@ public class CodeGenerator
             return;
         }
 
-        if (processedEntities.Contains(navigationTargetSymbol.Name))
+        if (processedEntities.Contains(navigationTargetSymbol.OriginalDefinition))
         {
             return;
         }
@@ -427,18 +495,13 @@ public class CodeGenerator
         return null;
     }
 
-    public class TypeReferenceRewriter(ImmutableHashSet<string> typeNames, SemanticModel model) : CSharpSyntaxRewriter
+    public class TypeReferenceRewriter(IReadOnlyDictionary<ITypeSymbol, string> typeNames, SemanticModel model) : CSharpSyntaxRewriter
     {
         public override SyntaxNode VisitIdentifierName(IdentifierNameSyntax node)
         {
-            // Check if the identifier matches the old type name
-            if (typeNames.Contains(node.Identifier.Text))
+            if (model.GetSymbolInfo(node).Symbol is INamedTypeSymbol symbol &&
+                typeNames.TryGetValue(symbol.OriginalDefinition, out var readonlyName))
             {
-                if (model.GetSymbolInfo(node).Symbol is not INamedTypeSymbol)
-                    return node;
-
-                // Replace with the new type name
-                var readonlyName = GetReadonlyTypeName(node.Identifier.Text);
                 return SyntaxFactory.IdentifierName(readonlyName)
                     .WithTriviaFrom(node);
             }
@@ -448,43 +511,26 @@ public class CodeGenerator
 
         public override SyntaxNode VisitMemberAccessExpression(MemberAccessExpressionSyntax node)
         {
-            if (!typeNames.Contains(node.Name.Identifier.Text))
-            {
-                return base.VisitMemberAccessExpression(node);
-            }
-
-            if (model.GetSymbolInfo(node.Name).Symbol is not INamedTypeSymbol)
-            {
-                return node;
-            }
-
-            var readonlyName = GetReadonlyTypeName(node.Name.Identifier.Text);
-
-            return SyntaxFactory.IdentifierName(readonlyName)
-                .WithTriviaFrom(node);
+            return base.VisitMemberAccessExpression(node);
         }
 
         public override SyntaxNode VisitQualifiedName(QualifiedNameSyntax node)
         {
-            if (!typeNames.Contains(node.Right.Identifier.Text))
+            if (model.GetSymbolInfo(node).Symbol is INamedTypeSymbol symbol &&
+                typeNames.TryGetValue(symbol.OriginalDefinition, out var readonlyName))
             {
-                return base.VisitQualifiedName(node);
+                return SyntaxFactory.IdentifierName(readonlyName).WithTriviaFrom(node);
             }
 
-            var readonlyName = GetReadonlyTypeName(node.Right.Identifier.Text);
-
-            return SyntaxFactory.IdentifierName(readonlyName)
-                .WithTriviaFrom(node);
+            return base.VisitQualifiedName(node);
         }
 
         public override SyntaxNode VisitConstructorDeclaration(ConstructorDeclarationSyntax node)
         {
-            if (!typeNames.Contains(node.Identifier.Text))
+            if (!typeNames.TryGetValue(model.GetDeclaredSymbol(node)?.ContainingType.OriginalDefinition, out var readonlyName))
             {
                 return base.VisitConstructorDeclaration(node);
             }
-
-            var readonlyName = GetReadonlyTypeName(node.Identifier.Text);
 
             node = node.WithIdentifier(SyntaxFactory.Identifier(readonlyName)
                 .WithTriviaFrom(node.Identifier));
@@ -495,22 +541,8 @@ public class CodeGenerator
         public override SyntaxNode VisitGenericName(GenericNameSyntax node)
         {
 
-            // Check if the generic type matches the old class name
             var updatedArguments = node.TypeArgumentList.Arguments
-                .Select(arg =>
-                {
-                    if (arg is IdentifierNameSyntax identifierName)
-                    {
-                        if (!typeNames.Contains(identifierName.Identifier.Text))
-                        {
-                            return arg;
-                        }
-
-                        var readonlyName = GetReadonlyTypeName(identifierName.Identifier.Text);
-                        return SyntaxFactory.IdentifierName(readonlyName).WithTriviaFrom(arg);
-                    }
-                    return arg;
-                })
+                .Select(arg => (TypeSyntax)Visit(arg) ?? arg)
                 .ToArray();
 
             // Special handling: ValueComparer<List<ReadOnlyX>> should align with generated IReadOnlyCollection properties.
@@ -543,6 +575,13 @@ public class CodeGenerator
         }
     }
 
+    private static string GetReadonlyTypeName(ITypeSymbol type, IReadOnlyDictionary<ITypeSymbol, string> generatedTypeNames)
+    {
+        return type != null && generatedTypeNames.TryGetValue(type.OriginalDefinition, out var name)
+            ? name
+            : GetReadonlyTypeName(type?.Name ?? string.Empty);
+    }
+
     private static string GetReadonlyTypeName(string typeName)
     {
         return $"ReadOnly{typeName}";
@@ -567,11 +606,11 @@ public class CodeGenerator
 
     private static CompilationUnitSyntax ModifyDbContextSyntax(DbContextInfo dbContext,
         ClassDeclarationSyntax dbContextSyntax, Compilation compilation, string commonNamespace,
-        ImmutableHashSet<string> types)
+        IReadOnlyDictionary<ITypeSymbol, string> types)
     {
         // Add the IReadOnlyDbContext interface to the BaseList
         var baseList = dbContextSyntax.BaseList ?? SyntaxFactory.BaseList();
-        var readonlyDbContextIdentifier = GetReadonlyTypeName(dbContext.Identifier.Text);
+        var readonlyDbContextIdentifier = GetReadonlyTypeName(dbContext.TypeSymbol, types);
         var readonlyDbContextInterfaceName = $"I{readonlyDbContextIdentifier}";
         var newBaseList = baseList.AddTypes(SyntaxFactory.SimpleBaseType(SyntaxFactory.ParseTypeName($"I{readonlyDbContextIdentifier}")));
 
@@ -667,19 +706,25 @@ public class CodeGenerator
             """
             public sealed override int SaveChanges()
             {
-                throw new NotImplementedException("Do not call SaveChanges on a readonly db context.");
+                throw new NotSupportedException("Saving changes is not supported by a readonly db context.");
+            }
+            """,
+            """
+            public sealed override int SaveChanges(bool acceptAllChangesOnSuccess)
+            {
+                throw new NotSupportedException("Saving changes is not supported by a readonly db context.");
             }
             """,
             """
             public sealed override Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
             {
-                throw new NotImplementedException("Do not call SaveChangesAsync on a readonly db context.");
+                throw new NotSupportedException("Saving changes is not supported by a readonly db context.");
             }
             """,
             """
             public sealed override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
             {
-                throw new NotImplementedException("Do not call SaveChangesAsync on a readonly db context.");
+                throw new NotSupportedException("Saving changes is not supported by a readonly db context.");
             }
             """
         };
@@ -711,6 +756,8 @@ public class CodeGenerator
                 return property
                     .WithType(queryableType)
                     .WithAccessorList(accessorList)
+                    .WithInitializer(null)
+                    .WithSemicolonToken(default)
                     .WithModifiers(SyntaxFactory.TokenList()); // Remove modifiers like `public`
             })
             .Cast<MemberDeclarationSyntax>()
@@ -747,10 +794,10 @@ public class CodeGenerator
             .AddMembers(namespaceDeclaration);
 
         // Convert the syntax tree to a string
-        return compilationUnit.NormalizeWhitespace().ToFullString();
+        return compilationUnit.NormalizeWhitespace(eol: Environment.NewLine).ToFullString();
     }
 
-    private static string ModifyEntityConfigSyntax(ImmutableHashSet<string> typeNames,
+    private static string ModifyEntityConfigSyntax(IReadOnlyDictionary<ITypeSymbol, string> typeNames,
         ClassDeclarationSyntax configSyntax, Compilation compilation, string commonNamespace)
     {
         var readonlyEntityConfigTypeName = GetReadonlyTypeName(configSyntax.Identifier.Text);
@@ -775,6 +822,6 @@ public class CodeGenerator
             .AddUsings(combinedUsings.ToArray())
             .AddMembers(namespaceDeclaration);
 
-        return compilationUnit.NormalizeWhitespace().ToFullString();
+        return compilationUnit.NormalizeWhitespace(eol: Environment.NewLine).ToFullString();
     }
 }
