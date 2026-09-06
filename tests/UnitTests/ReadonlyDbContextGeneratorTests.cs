@@ -1,4 +1,4 @@
-﻿using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.Testing;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.EntityFrameworkCore;
@@ -9,6 +9,146 @@ namespace UnitTests;
 
 public class ReadonlyDbContextGeneratorTests
 {
+    [Fact]
+    public async Task DoesNotGenerateOrCrashWhenNoDbContextIsPresent()
+    {
+        var test = new VerifyCS.Test
+        {
+            TestState =
+            {
+                Sources = { "namespace Sample; public sealed class PlainType { }" }
+            }
+        };
+
+        await test.RunAsync();
+    }
+
+    [Fact]
+    public void GeneratesForAContextThatIndirectlyInheritsDbContext()
+    {
+        var source = CSharpSyntaxTree.ParseText("""
+            using Microsoft.EntityFrameworkCore;
+
+            public class Entity { public int Id { get; set; } }
+            public abstract class ApplicationContextBase : DbContext { }
+            public class ApplicationContext : ApplicationContextBase
+            {
+                public DbSet<Entity> Entities { get; set; } = null!;
+            }
+            """);
+
+        var compilation = CSharpCompilation.Create(
+            assemblyName: "GeneratorRegression",
+            syntaxTrees: [source],
+            references:
+            [
+                MetadataReference.CreateFromFile(typeof(object).Assembly.Location),
+                MetadataReference.CreateFromFile(typeof(DbContext).Assembly.Location)
+            ],
+            options: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+
+        GeneratorDriver driver = CSharpGeneratorDriver.Create(
+            new ReadonlyDbContextGenerator.ReadOnlyDbContextGenerator().AsSourceGenerator());
+        driver = driver.RunGenerators(compilation);
+
+        var generatedSources = driver.GetRunResult().Results.Single().GeneratedSources;
+        Assert.Contains(generatedSources, sourceResult => sourceResult.HintName == "ReadOnlyApplicationContext.g.cs");
+    }
+
+    [Fact]
+    public void GeneratesDistinctTypesForEntitiesWithTheSameShortNameAndMergesPartialDeclarations()
+    {
+        var source = CSharpSyntaxTree.ParseText("""
+            using Microsoft.EntityFrameworkCore;
+
+            namespace Sales
+            {
+                public partial class Customer { public int Id { get; set; } }
+                public partial class Customer { public string Name { get; set; } = string.Empty; }
+            }
+
+            namespace Support
+            {
+                public class Customer { public int Id { get; set; } }
+            }
+
+            namespace Application
+            {
+                public class ApplicationContext : DbContext
+                {
+                    public DbSet<Sales.Customer> SalesCustomers { get; set; } = null!;
+                    public DbSet<Support.Customer> SupportCustomers { get; set; } = null!;
+                }
+            }
+            """);
+
+        var compilation = CSharpCompilation.Create(
+            assemblyName: "GeneratorRegression",
+            syntaxTrees: [source],
+            references:
+            [
+                MetadataReference.CreateFromFile(typeof(object).Assembly.Location),
+                MetadataReference.CreateFromFile(typeof(DbContext).Assembly.Location)
+            ],
+            options: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+
+        GeneratorDriver driver = CSharpGeneratorDriver.Create(
+            new ReadonlyDbContextGenerator.ReadOnlyDbContextGenerator().AsSourceGenerator());
+        driver = driver.RunGenerators(compilation);
+
+        var generatedSources = driver.GetRunResult().Results.Single().GeneratedSources;
+        var salesCustomers = generatedSources.Where(result => result.HintName.StartsWith("Sales_ReadOnlyCustomer_Sales_", StringComparison.Ordinal)).ToArray();
+        var supportCustomer = Assert.Single(generatedSources.Where(result => result.HintName == "Support_ReadOnlyCustomer_Support.g.cs"));
+        var context = Assert.Single(generatedSources.Where(result => result.HintName == "ReadOnlyApplicationContext.g.cs"));
+
+        Assert.Equal(2, salesCustomers.Length);
+        Assert.Contains(salesCustomers, result => result.SourceText.ToString().Contains("string Name { get; init; }", StringComparison.Ordinal));
+        Assert.Contains("class ReadOnlyCustomer_Support", supportCustomer.SourceText.ToString());
+        Assert.Contains("DbSet<ReadOnlyCustomer_Sales> SalesCustomers", context.SourceText.ToString());
+        Assert.Contains("DbSet<ReadOnlyCustomer_Support> SupportCustomers", context.SourceText.ToString());
+
+    }
+
+    [Fact]
+    public void ReusesSyntaxCandidatesAfterAnUnrelatedSyntaxEdit()
+    {
+        var contextTree = CSharpSyntaxTree.ParseText("""
+            using Microsoft.EntityFrameworkCore;
+
+            public class Entity { public int Id { get; set; } }
+            public class ApplicationContext : DbContext
+            {
+                public DbSet<Entity> Entities { get; set; } = null!;
+            }
+            """);
+        var unrelatedTree = CSharpSyntaxTree.ParseText("public class Unrelated { public int Value => 1; }");
+        var compilation = CSharpCompilation.Create(
+            assemblyName: "IncrementalRegression",
+            syntaxTrees: [contextTree, unrelatedTree],
+            references:
+            [
+                MetadataReference.CreateFromFile(typeof(object).Assembly.Location),
+                MetadataReference.CreateFromFile(typeof(DbContext).Assembly.Location)
+            ],
+            options: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+
+        GeneratorDriver driver = CSharpGeneratorDriver.Create(
+            generators: [new ReadonlyDbContextGenerator.ReadOnlyDbContextGenerator().AsSourceGenerator()],
+            driverOptions: new GeneratorDriverOptions(IncrementalGeneratorOutputKind.None, trackIncrementalGeneratorSteps: true));
+        driver = driver.RunGenerators(compilation);
+
+        var updatedUnrelatedTree = CSharpSyntaxTree.ParseText("public class Unrelated { public int Value => 2; }");
+        var updatedCompilation = compilation.ReplaceSyntaxTree(unrelatedTree, updatedUnrelatedTree);
+        driver = driver.RunGenerators(updatedCompilation);
+
+        var trackedSteps = driver.GetRunResult().Results.Single().TrackedSteps;
+        var candidateOutputs = trackedSteps["ClassCandidates"].SelectMany(step => step.Outputs).ToArray();
+
+        Assert.NotEmpty(candidateOutputs);
+        Assert.All(candidateOutputs, output => Assert.True(
+            output.Reason is IncrementalStepRunReason.Cached or IncrementalStepRunReason.Unchanged));
+    }
+
     [Fact]
     public async Task GeneratesReadOnlyEntitiesAndDbContext()
     {
@@ -109,17 +249,22 @@ namespace MyApp.Entities.Generated
 
         public sealed override int SaveChanges()
         {
-            throw new NotImplementedException("Do not call SaveChanges on a readonly db context.");
+            throw new NotSupportedException("Saving changes is not supported by a readonly db context.");
+        }
+
+        public sealed override int SaveChanges(bool acceptAllChangesOnSuccess)
+        {
+            throw new NotSupportedException("Saving changes is not supported by a readonly db context.");
         }
 
         public sealed override Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
         {
-            throw new NotImplementedException("Do not call SaveChangesAsync on a readonly db context.");
+            throw new NotSupportedException("Saving changes is not supported by a readonly db context.");
         }
 
         public sealed override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
         {
-            throw new NotImplementedException("Do not call SaveChangesAsync on a readonly db context.");
+            throw new NotSupportedException("Saving changes is not supported by a readonly db context.");
         }
 
         IQueryable<ReadOnlyUser> IReadOnlyMyDbContext.Users => Users;
@@ -175,8 +320,8 @@ namespace MyApp.Entities.Generated
 
         test.SolutionTransforms.Add((solution, projectId) =>
         {
-            var project = solution.GetProject(projectId);
-            var options = (CSharpCompilationOptions)project.CompilationOptions;
+            var project = solution.GetProject(projectId)!;
+            var options = (CSharpCompilationOptions)project.CompilationOptions!;
             options = options.WithSpecificDiagnosticOptions(options.SpecificDiagnosticOptions.SetItems(new Dictionary<string, ReportDiagnostic>
             {
                 ["CS8618"] = ReportDiagnostic.Suppress
@@ -302,17 +447,22 @@ namespace MyApp.Entities.Generated
 
         public sealed override int SaveChanges()
         {
-            throw new NotImplementedException("Do not call SaveChanges on a readonly db context.");
+            throw new NotSupportedException("Saving changes is not supported by a readonly db context.");
+        }
+
+        public sealed override int SaveChanges(bool acceptAllChangesOnSuccess)
+        {
+            throw new NotSupportedException("Saving changes is not supported by a readonly db context.");
         }
 
         public sealed override Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
         {
-            throw new NotImplementedException("Do not call SaveChangesAsync on a readonly db context.");
+            throw new NotSupportedException("Saving changes is not supported by a readonly db context.");
         }
 
         public sealed override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
         {
-            throw new NotImplementedException("Do not call SaveChangesAsync on a readonly db context.");
+            throw new NotSupportedException("Saving changes is not supported by a readonly db context.");
         }
 
         IQueryable<ReadOnlyParameterSetting> IReadOnlyMyDbContext.ParameterSettings => ParameterSettings;
@@ -365,8 +515,8 @@ namespace MyApp.Entities.Generated
 
         test.SolutionTransforms.Add((solution, projectId) =>
         {
-            var project = solution.GetProject(projectId);
-            var options = (CSharpCompilationOptions)project.CompilationOptions;
+            var project = solution.GetProject(projectId)!;
+            var options = (CSharpCompilationOptions)project.CompilationOptions!;
             options = options.WithSpecificDiagnosticOptions(options.SpecificDiagnosticOptions.SetItems(new Dictionary<string, ReportDiagnostic>
             {
                 ["CS8618"] = ReportDiagnostic.Suppress
@@ -444,17 +594,22 @@ namespace MyApp.Entities.Generated
 
         public sealed override int SaveChanges()
         {
-            throw new NotImplementedException("Do not call SaveChanges on a readonly db context.");
+            throw new NotSupportedException("Saving changes is not supported by a readonly db context.");
+        }
+
+        public sealed override int SaveChanges(bool acceptAllChangesOnSuccess)
+        {
+            throw new NotSupportedException("Saving changes is not supported by a readonly db context.");
         }
 
         public sealed override Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
         {
-            throw new NotImplementedException("Do not call SaveChangesAsync on a readonly db context.");
+            throw new NotSupportedException("Saving changes is not supported by a readonly db context.");
         }
 
         public sealed override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
         {
-            throw new NotImplementedException("Do not call SaveChangesAsync on a readonly db context.");
+            throw new NotSupportedException("Saving changes is not supported by a readonly db context.");
         }
 
         IQueryable<ReadOnlyDepartment> IReadOnlyMyDbContext.Departments => Departments;
@@ -506,8 +661,8 @@ namespace MyApp.Entities.Generated
 
         test.SolutionTransforms.Add((solution, projectId) =>
         {
-            var project = solution.GetProject(projectId);
-            var options = (CSharpCompilationOptions)project.CompilationOptions;
+            var project = solution.GetProject(projectId)!;
+            var options = (CSharpCompilationOptions)project.CompilationOptions!;
             options = options.WithSpecificDiagnosticOptions(options.SpecificDiagnosticOptions.SetItems(new Dictionary<string, ReportDiagnostic>
             {
                 ["CS8618"] = ReportDiagnostic.Suppress
@@ -598,17 +753,22 @@ namespace MyApp.Entities.Generated
 
         public sealed override int SaveChanges()
         {
-            throw new NotImplementedException("Do not call SaveChanges on a readonly db context.");
+            throw new NotSupportedException("Saving changes is not supported by a readonly db context.");
+        }
+
+        public sealed override int SaveChanges(bool acceptAllChangesOnSuccess)
+        {
+            throw new NotSupportedException("Saving changes is not supported by a readonly db context.");
         }
 
         public sealed override Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
         {
-            throw new NotImplementedException("Do not call SaveChangesAsync on a readonly db context.");
+            throw new NotSupportedException("Saving changes is not supported by a readonly db context.");
         }
 
         public sealed override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
         {
-            throw new NotImplementedException("Do not call SaveChangesAsync on a readonly db context.");
+            throw new NotSupportedException("Saving changes is not supported by a readonly db context.");
         }
 
         IQueryable<ReadOnlySettingKey> IReadOnlyMyDbContext.SettingKeys => SettingKeys;
@@ -661,8 +821,8 @@ namespace MyApp.Entities.Generated
 
         test.SolutionTransforms.Add((solution, projectId) =>
         {
-            var project = solution.GetProject(projectId);
-            var options = (CSharpCompilationOptions)project.CompilationOptions;
+            var project = solution.GetProject(projectId)!;
+            var options = (CSharpCompilationOptions)project.CompilationOptions!;
             options = options.WithSpecificDiagnosticOptions(options.SpecificDiagnosticOptions.SetItems(new Dictionary<string, ReportDiagnostic>
             {
                 ["CS8618"] = ReportDiagnostic.Suppress
@@ -758,17 +918,22 @@ namespace MyApp.Entities.Generated
 
         public sealed override int SaveChanges()
         {
-            throw new NotImplementedException("Do not call SaveChanges on a readonly db context.");
+            throw new NotSupportedException("Saving changes is not supported by a readonly db context.");
+        }
+
+        public sealed override int SaveChanges(bool acceptAllChangesOnSuccess)
+        {
+            throw new NotSupportedException("Saving changes is not supported by a readonly db context.");
         }
 
         public sealed override Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
         {
-            throw new NotImplementedException("Do not call SaveChangesAsync on a readonly db context.");
+            throw new NotSupportedException("Saving changes is not supported by a readonly db context.");
         }
 
         public sealed override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
         {
-            throw new NotImplementedException("Do not call SaveChangesAsync on a readonly db context.");
+            throw new NotSupportedException("Saving changes is not supported by a readonly db context.");
         }
 
         IQueryable<ReadOnlyOrder> IReadOnlyMyDbContext.Orders => Orders;
@@ -822,8 +987,8 @@ namespace MyApp.Entities.Generated
 
         test.SolutionTransforms.Add((solution, projectId) =>
         {
-            var project = solution.GetProject(projectId);
-            var options = (CSharpCompilationOptions)project.CompilationOptions;
+            var project = solution.GetProject(projectId)!;
+            var options = (CSharpCompilationOptions)project.CompilationOptions!;
             options = options.WithSpecificDiagnosticOptions(options.SpecificDiagnosticOptions.SetItems(new Dictionary<string, ReportDiagnostic>
             {
                 ["CS8618"] = ReportDiagnostic.Suppress
@@ -905,17 +1070,22 @@ namespace MyApp.Entities.Generated
 
         public sealed override int SaveChanges()
         {
-            throw new NotImplementedException("Do not call SaveChanges on a readonly db context.");
+            throw new NotSupportedException("Saving changes is not supported by a readonly db context.");
+        }
+
+        public sealed override int SaveChanges(bool acceptAllChangesOnSuccess)
+        {
+            throw new NotSupportedException("Saving changes is not supported by a readonly db context.");
         }
 
         public sealed override Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
         {
-            throw new NotImplementedException("Do not call SaveChangesAsync on a readonly db context.");
+            throw new NotSupportedException("Saving changes is not supported by a readonly db context.");
         }
 
         public sealed override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
         {
-            throw new NotImplementedException("Do not call SaveChangesAsync on a readonly db context.");
+            throw new NotSupportedException("Saving changes is not supported by a readonly db context.");
         }
 
         IQueryable<ReadOnlyReservation> IReadOnlyMyDbContext.Reservations => Reservations;
@@ -967,8 +1137,8 @@ namespace MyApp.Entities.Generated
 
         test.SolutionTransforms.Add((solution, projectId) =>
         {
-            var project = solution.GetProject(projectId);
-            var options = (CSharpCompilationOptions)project.CompilationOptions;
+            var project = solution.GetProject(projectId)!;
+            var options = (CSharpCompilationOptions)project.CompilationOptions!;
             options = options.WithSpecificDiagnosticOptions(options.SpecificDiagnosticOptions.SetItems(new Dictionary<string, ReportDiagnostic>
             {
                 ["CS8618"] = ReportDiagnostic.Suppress

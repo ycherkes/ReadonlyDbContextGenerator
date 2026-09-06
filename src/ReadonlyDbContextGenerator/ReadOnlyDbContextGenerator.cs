@@ -1,6 +1,7 @@
 ﻿using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using ReadonlyDbContextGenerator.Diagnostics;
+using ReadonlyDbContextGenerator.Extensions;
 using ReadonlyDbContextGenerator.Helpers;
 using ReadonlyDbContextGenerator.Model;
 using System;
@@ -15,60 +16,70 @@ public class ReadOnlyDbContextGenerator : IIncrementalGenerator
 {
     public void Initialize(IncrementalGeneratorInitializationContext context)
     {
-        var compilationInfoFromProvider = context.CompilationProvider
-            .Select((c, _) => CompilationHelper.LoadEfCoreContext(c));
-
         var classesWithBaseList = context.SyntaxProvider.CreateSyntaxProvider(
             predicate: static (s, _) => SyntaxHelper.IsClassWithBaseList(s),
-            transform: static (generatorSyntaxContext, _) => generatorSyntaxContext
-        );
+            transform: static (generatorSyntaxContext, _) => (ClassDeclarationSyntax)generatorSyntaxContext.Node
+        ).WithTrackingName("ClassCandidates");
 
-        var classesWithBaseListAndCompilation = classesWithBaseList.Combine(compilationInfoFromProvider);
+        var classesWithCompilation = classesWithBaseList.Combine(context.CompilationProvider);
 
-        var dbContextProviders = classesWithBaseListAndCompilation
-            .Select((pair, _) =>
+        var dbContextProviders = classesWithCompilation
+            .Select((pair, cancellationToken) =>
             {
-                var (classDecl, compilationInfo) = pair;
+                cancellationToken.ThrowIfCancellationRequested();
+                var (classDeclaration, compilation) = pair;
+                var compilationInfo = CompilationHelper.LoadEfCoreContext(compilation);
                 if (compilationInfo.DbContextSymbol == null)
                 {
-                    return (DbContextInfo: null, CompilationInfo: compilationInfo);
+                    return null;
                 }
 
-                var dbContextInfo = ExtractDbContext(classDecl, compilationInfo);
-                return (DbContextInfo: dbContextInfo, CompilationInfo: compilationInfo);
+                return ExtractDbContext(classDeclaration, compilation.GetSemanticModel(classDeclaration.SyntaxTree), compilationInfo);
             })
-            .Where(x => x.DbContextInfo != null);
+            .Where(dbContextInfo => dbContextInfo != null)
+            .WithTrackingName("DbContextDiscovery");
 
-        var entityConfigs = classesWithBaseListAndCompilation
-            .Select(static (pair, _) =>
+        var entityConfigs = classesWithCompilation
+            .Select((pair, cancellationToken) =>
             {
-                var (classDecl, compilationInfo) = pair;
+                cancellationToken.ThrowIfCancellationRequested();
+                var (classDeclaration, compilation) = pair;
+                var compilationInfo = CompilationHelper.LoadEfCoreContext(compilation);
 
                 return compilationInfo.DbContextSymbol == null
                     ? null
-                    : ExtractEntityConfigInfo(classDecl, compilationInfo);
+                    : ExtractEntityConfigInfo(classDeclaration, compilation.GetSemanticModel(classDeclaration.SyntaxTree), compilationInfo);
             })
-            .Where(eci => eci != null);
+            .Where(eci => eci != null)
+            .WithTrackingName("EntityConfigurationDiscovery");
 
         var aggregatedInfo = dbContextProviders.Collect()
             .Combine(entityConfigs.Collect())
+            .Combine(context.CompilationProvider)
             .Select(static (combined, _) =>
             {
-                var dbContexts = combined.Left.Select(x => x.DbContextInfo).ToImmutableArray();
+                var dbContexts = combined.Left.Left
+                    .GroupBy(dbContext => dbContext.TypeSymbol, SymbolEqualityComparer.Default)
+                    .Select(group => group.First())
+                    .ToImmutableArray();
 
-                var compilationInfo = combined.Left.Select(x => x.CompilationInfo).FirstOrDefault();
-
-                var configs = combined.Right.GroupBy(x => x.EntityType, SymbolEqualityComparer.Default)
+                var configs = combined.Left.Right.GroupBy(x => x.EntityType, SymbolEqualityComparer.Default)
                     .Select(g => g.First())
                     .ToImmutableArray();
 
                 var aggregatedEntities = dbContexts.SelectMany(db => db.Entities).ToImmutableArray();
 
-                return new AggregatedInfo(dbContexts!, configs, aggregatedEntities, compilationInfo!.Compilation);
-            });
+                return new AggregatedInfo(dbContexts!, configs, aggregatedEntities, combined.Right);
+            })
+            .WithTrackingName("GenerationModel");
 
         context.RegisterSourceOutput(aggregatedInfo, static (spc, aggregated) =>
         {
+            if (aggregated.DbContexts.IsDefaultOrEmpty)
+            {
+                return;
+            }
+
             try
             {
                 CodeGenerator.GenerateReadOnlyCode(spc, aggregated);
@@ -83,16 +94,13 @@ public class ReadOnlyDbContextGenerator : IIncrementalGenerator
         });
     }
 
-    private static EntityConfigInfo ExtractEntityConfigInfo(GeneratorSyntaxContext context, CompilationContext compilationInfo)
+    private static EntityConfigInfo ExtractEntityConfigInfo(ClassDeclarationSyntax classDecl, SemanticModel semanticModel, CompilationContext compilationInfo)
     {
-        var semanticModel = context.SemanticModel;
-        if (semanticModel.GetDeclaredSymbol(context.Node) is not INamedTypeSymbol typeSymbol ||
+        if (semanticModel.GetDeclaredSymbol(classDecl) is not INamedTypeSymbol typeSymbol ||
             !typeSymbol.AllInterfaces.Any(interfaceSymbol => SymbolEqualityComparer.Default.Equals(interfaceSymbol.ConstructedFrom, compilationInfo.EntityConfigurationSymbol)))
         {
             return null;
         }
-
-        var classDecl = (ClassDeclarationSyntax)context.Node;
 
         var entityType = typeSymbol.AllInterfaces
             .First(interfaceSymbol => SymbolEqualityComparer.Default.Equals(interfaceSymbol.ConstructedFrom, compilationInfo.EntityConfigurationSymbol))
@@ -105,16 +113,13 @@ public class ReadOnlyDbContextGenerator : IIncrementalGenerator
         };
     }
 
-    private static DbContextInfo ExtractDbContext(GeneratorSyntaxContext context, CompilationContext compilationInfo)
+    private static DbContextInfo ExtractDbContext(ClassDeclarationSyntax classDecl, SemanticModel semanticModel, CompilationContext compilationInfo)
     {
-        var semanticModel = context.SemanticModel;
-        if (semanticModel.GetDeclaredSymbol(context.Node) is not INamedTypeSymbol typeSymbol ||
-            !SymbolEqualityComparer.Default.Equals(typeSymbol.BaseType, compilationInfo.DbContextSymbol))
+        if (semanticModel.GetDeclaredSymbol(classDecl) is not INamedTypeSymbol typeSymbol ||
+            !typeSymbol.InheritsFromType(compilationInfo.DbContextSymbol))
         {
             return null;
         }
-
-        var classDecl = (ClassDeclarationSyntax)context.Node;
 
         var externalEntities = new List<ExternalEntityInfo>();
 
