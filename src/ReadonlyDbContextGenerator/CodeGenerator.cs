@@ -52,7 +52,7 @@ public class CodeGenerator
         {
             var readOnlyDbContextCode = ModifyDbContextSyntax(dbContext, dbContext.SyntaxNode!, info.Compilation, commonNamespace, generatedTypeNames);
             var readonlyDbContextFileName = GetReadonlyTypeName(dbContext.TypeSymbol, generatedTypeNames);
-            context.AddSource($"{readonlyDbContextFileName}.g.cs", readOnlyDbContextCode.NormalizeWhitespace(eol: "\n").ToFullString());
+            context.AddSource($"{readonlyDbContextFileName}.g.cs", readOnlyDbContextCode.NormalizeWhitespace(eol: Environment.NewLine).ToFullString());
 
             var readOnlyInterfaceCode = GenerateReadOnlyDbContextInterface(readOnlyDbContextCode, dbContext, commonNamespace);
             context.AddSource($"I{readonlyDbContextFileName}.g.cs", readOnlyInterfaceCode);
@@ -363,7 +363,7 @@ public class CodeGenerator
             .AddMembers(namespaceDeclaration);
 
         // Return the modified entity code
-        return compilationUnit.NormalizeWhitespace(eol: "\n").ToFullString();
+        return compilationUnit.NormalizeWhitespace(eol: Environment.NewLine).ToFullString();
     }
 
     private static List<UsingDirectiveSyntax> CombineUsings(SyntaxNode entitySyntax, string[] requiredUsings)
@@ -794,7 +794,7 @@ public class CodeGenerator
             .AddMembers(namespaceDeclaration);
 
         // Convert the syntax tree to a string
-        return compilationUnit.NormalizeWhitespace(eol: "\n").ToFullString();
+        return compilationUnit.NormalizeWhitespace(eol: Environment.NewLine).ToFullString();
     }
 
     private static string ModifyEntityConfigSyntax(IReadOnlyDictionary<ITypeSymbol, string> typeNames,
@@ -822,6 +822,6 @@ public class CodeGenerator
             .AddUsings(combinedUsings.ToArray())
             .AddMembers(namespaceDeclaration);
 
-        return compilationUnit.NormalizeWhitespace(eol: "\n").ToFullString();
+        return compilationUnit.NormalizeWhitespace(eol: Environment.NewLine).ToFullString();
     }
 }
