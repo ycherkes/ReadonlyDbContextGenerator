@@ -964,8 +964,6 @@ namespace MyApp.Entities.Generated
 }
 """;
 
-        static string ToCrLf(string source) => source.Replace("\r\n", "\n").Replace("\n", "\r\n");
-
         var test = new VerifyCS.Test
         {
             TestState =
@@ -977,10 +975,10 @@ namespace MyApp.Entities.Generated
                 },
                 GeneratedSources =
                 {
-                    (typeof(ReadonlyDbContextGenerator.ReadOnlyDbContextGenerator), "ReadOnlyOrder.g.cs", ToCrLf(expectedOrder)),
-                    (typeof(ReadonlyDbContextGenerator.ReadOnlyDbContextGenerator), "ReadOnlyShippingAddress.g.cs", ToCrLf(expectedShippingAddress)),
-                    (typeof(ReadonlyDbContextGenerator.ReadOnlyDbContextGenerator), "ReadOnlyMyDbContext.g.cs", ToCrLf(expectedDbContext)),
-                    (typeof(ReadonlyDbContextGenerator.ReadOnlyDbContextGenerator), "IReadOnlyMyDbContext.g.cs", ToCrLf(expectedInterface))
+                    (typeof(ReadonlyDbContextGenerator.ReadOnlyDbContextGenerator), "ReadOnlyOrder.g.cs", expectedOrder),
+                    (typeof(ReadonlyDbContextGenerator.ReadOnlyDbContextGenerator), "ReadOnlyShippingAddress.g.cs", expectedShippingAddress),
+                    (typeof(ReadonlyDbContextGenerator.ReadOnlyDbContextGenerator), "ReadOnlyMyDbContext.g.cs", expectedDbContext),
+                    (typeof(ReadonlyDbContextGenerator.ReadOnlyDbContextGenerator), "IReadOnlyMyDbContext.g.cs", expectedInterface)
                 }
             },
         };
@@ -1115,8 +1113,6 @@ namespace MyApp.Entities.Generated
 }
 """;
 
-        static string ToCrLf(string source) => source.Replace("\r\n", "\n").Replace("\n", "\r\n");
-
         var test = new VerifyCS.Test
         {
             TestState =
@@ -1128,9 +1124,9 @@ namespace MyApp.Entities.Generated
                 },
                 GeneratedSources =
                 {
-                    (typeof(ReadonlyDbContextGenerator.ReadOnlyDbContextGenerator), "ReadOnlyReservation.g.cs", ToCrLf(expectedReservation)),
-                    (typeof(ReadonlyDbContextGenerator.ReadOnlyDbContextGenerator), "ReadOnlyMyDbContext.g.cs", ToCrLf(expectedDbContext)),
-                    (typeof(ReadonlyDbContextGenerator.ReadOnlyDbContextGenerator), "IReadOnlyMyDbContext.g.cs", ToCrLf(expectedInterface))
+                    (typeof(ReadonlyDbContextGenerator.ReadOnlyDbContextGenerator), "ReadOnlyReservation.g.cs", expectedReservation),
+                    (typeof(ReadonlyDbContextGenerator.ReadOnlyDbContextGenerator), "ReadOnlyMyDbContext.g.cs", expectedDbContext),
+                    (typeof(ReadonlyDbContextGenerator.ReadOnlyDbContextGenerator), "IReadOnlyMyDbContext.g.cs", expectedInterface)
                 }
             },
         };
