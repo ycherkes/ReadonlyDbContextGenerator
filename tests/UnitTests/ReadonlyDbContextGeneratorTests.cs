@@ -110,6 +110,63 @@ public class ReadonlyDbContextGeneratorTests
     }
 
     [Fact]
+    public void RewritesFullyQualifiedEntityTypesInConfigurations()
+    {
+        const string source = /* lang=c#-test */ """
+            using Microsoft.EntityFrameworkCore;
+            using Microsoft.EntityFrameworkCore.Metadata.Builders;
+
+            namespace Sample.Entities
+            {
+                public class PurchaseOrder
+                {
+                    public int Id { get; set; }
+                }
+            }
+
+            namespace Sample
+            {
+                public class ApplicationContext : DbContext
+                {
+                    public DbSet<Entities.PurchaseOrder> PurchaseOrders { get; set; } = null!;
+                }
+            }
+
+            namespace Sample.Configurations
+            {
+                public class PurchaseOrderConfiguration : IEntityTypeConfiguration<Sample.Entities.PurchaseOrder>
+                {
+                    public void Configure(EntityTypeBuilder<Sample.Entities.PurchaseOrder> builder)
+                    {
+                    }
+                }
+            }
+            """;
+
+        var compilation = CSharpCompilation.Create(
+            assemblyName: "FullyQualifiedConfigurationRegression",
+            syntaxTrees: [CSharpSyntaxTree.ParseText(source)],
+            references:
+            [
+                MetadataReference.CreateFromFile(typeof(object).Assembly.Location),
+                MetadataReference.CreateFromFile(typeof(DbContext).Assembly.Location)
+            ],
+            options: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+
+        GeneratorDriver driver = CSharpGeneratorDriver.Create(
+            new ReadonlyDbContextGenerator.ReadOnlyDbContextGenerator().AsSourceGenerator());
+        driver = driver.RunGenerators(compilation);
+
+        var generatedConfiguration = Assert.Single(driver.GetRunResult().Results.Single().GeneratedSources,
+            sourceResult => sourceResult.SourceText.ToString().Contains("class ReadOnlyPurchaseOrderConfiguration", StringComparison.Ordinal));
+        var generatedSource = generatedConfiguration.SourceText.ToString();
+
+        Assert.Contains("IEntityTypeConfiguration<ReadOnlyPurchaseOrder>", generatedSource);
+        Assert.Contains("EntityTypeBuilder<ReadOnlyPurchaseOrder>", generatedSource);
+        Assert.DoesNotContain("Sample.Entities.ReadOnlyPurchaseOrder", generatedSource);
+    }
+
+    [Fact]
     public void ReusesSyntaxCandidatesAfterAnUnrelatedSyntaxEdit()
     {
         var contextTree = CSharpSyntaxTree.ParseText("""

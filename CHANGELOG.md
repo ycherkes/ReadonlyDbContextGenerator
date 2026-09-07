@@ -2,6 +2,9 @@
 
 All notable changes to this project will be documented in this file.
 
+## v0.2.1
+- Fixed fully qualified entity references in generated EF Core configurations so they point to the generated readonly entity type.
+
 ## v0.2.0
 - Blocked all `SaveChanges` overloads in generated contexts, including `SaveChanges(bool)`.
 - Generated `NotSupportedException` for blocked save operations.
