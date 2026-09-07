@@ -43,15 +43,15 @@ public class CodeGenerator
 
         foreach (var config in info.Configurations)
         {
-            var configSyntax = ModifyEntityConfigSyntax(generatedTypeNames, config.SyntaxNode!, info.Compilation, commonNamespace);
             var readonlyEntityConfigTypeName = GetReadonlyTypeName(config.SyntaxNode.Identifier.Text);
+            var configSyntax = ModifyEntityConfigSyntax(generatedTypeNames, config.SyntaxNode!, info.Compilation, commonNamespace);
             context.AddSource($"{GetSourceHintName(config.EntityType, readonlyEntityConfigTypeName)}.g.cs", configSyntax);
         }
 
         foreach (var dbContext in info.DbContexts)
         {
-            var readOnlyDbContextCode = ModifyDbContextSyntax(dbContext, dbContext.SyntaxNode!, info.Compilation, commonNamespace, generatedTypeNames);
             var readonlyDbContextFileName = GetReadonlyTypeName(dbContext.TypeSymbol, generatedTypeNames);
+            var readOnlyDbContextCode = ModifyDbContextSyntax(dbContext, dbContext.SyntaxNode!, info.Compilation, commonNamespace, generatedTypeNames);
             context.AddSource($"{readonlyDbContextFileName}.g.cs", readOnlyDbContextCode.NormalizeWhitespace(eol: Environment.NewLine).ToFullString());
 
             var readOnlyInterfaceCode = GenerateReadOnlyDbContextInterface(readOnlyDbContextCode, dbContext, commonNamespace);
@@ -161,8 +161,8 @@ public class CodeGenerator
                     DbSetProperty = entity.DbSetProperty,
                     SyntaxNode = declaration
                 };
-                var readOnlyEntityCode = ModifyEntitySyntax(declarationInfo, declaration, processedEntities, info.Entities, additionalEntitiesToProcess, info.Compilation, commonNamespace, generatedTypeNames);
                 var readonlyFileName = GetReadonlyTypeName(entity.Type, generatedTypeNames);
+                var readOnlyEntityCode = ModifyEntitySyntax(declarationInfo, declaration, processedEntities, info.Entities, additionalEntitiesToProcess, info.Compilation, commonNamespace, generatedTypeNames);
                 var sourceHint = GetSourceHintName(entity.Type, readonlyFileName);
                 if (declarations.Length > 1)
                 {
@@ -186,8 +186,8 @@ public class CodeGenerator
                     {
                         generatedTypeNames[entity.Type.OriginalDefinition] = GetReadonlyTypeName(entity.Type.Name);
                     }
-                    var readOnlyEntityCode = ModifyEntitySyntax(entity, entity.SyntaxNode!, processedEntities, info.Entities, additionalEntitiesToProcess, info.Compilation, commonNamespace, generatedTypeNames);
                     var readonlyFileName = GetReadonlyTypeName(entity.Type, generatedTypeNames);
+                    var readOnlyEntityCode = ModifyEntitySyntax(entity, entity.SyntaxNode!, processedEntities, info.Entities, additionalEntitiesToProcess, info.Compilation, commonNamespace, generatedTypeNames);
                     context.AddSource($"{GetSourceHintName(entity.Type, readonlyFileName)}.g.cs", readOnlyEntityCode);
                 }
             }
@@ -510,6 +510,11 @@ public class CodeGenerator
 
         public override SyntaxNode VisitMemberAccessExpression(MemberAccessExpressionSyntax node)
         {
+            if (TryGetReadonlyName(model.GetSymbolInfo(node.Expression).Symbol as ITypeSymbol, out var readonlyName))
+            {
+                return node.WithExpression(SyntaxFactory.IdentifierName(readonlyName).WithTriviaFrom(node.Expression));
+            }
+
             return base.VisitMemberAccessExpression(node);
         }
 

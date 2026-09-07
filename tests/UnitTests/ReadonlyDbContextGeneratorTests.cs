@@ -138,6 +138,7 @@ public class ReadonlyDbContextGeneratorTests
                 {
                     public void Configure(EntityTypeBuilder<Sample.Entities.PurchaseOrder> builder)
                     {
+                        builder.HasFilter($"{nameof(Sample.Entities.PurchaseOrder.Id)} IS NOT NULL");
                     }
                 }
             }
@@ -163,6 +164,7 @@ public class ReadonlyDbContextGeneratorTests
 
         Assert.Contains("IEntityTypeConfiguration<ReadOnlyPurchaseOrder>", generatedSource);
         Assert.Contains("EntityTypeBuilder<ReadOnlyPurchaseOrder>", generatedSource);
+        Assert.Contains("nameof(ReadOnlyPurchaseOrder.Id)", generatedSource);
         Assert.DoesNotContain("Sample.Entities.ReadOnlyPurchaseOrder", generatedSource);
     }
 
