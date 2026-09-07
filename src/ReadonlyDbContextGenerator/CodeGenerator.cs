@@ -499,8 +499,7 @@ public class CodeGenerator
     {
         public override SyntaxNode VisitIdentifierName(IdentifierNameSyntax node)
         {
-            if (model.GetSymbolInfo(node).Symbol is INamedTypeSymbol symbol &&
-                typeNames.TryGetValue(symbol.OriginalDefinition, out var readonlyName))
+            if (TryGetReadonlyName(model.GetSymbolInfo(node).Symbol as ITypeSymbol, out var readonlyName))
             {
                 return SyntaxFactory.IdentifierName(readonlyName)
                     .WithTriviaFrom(node);
@@ -516,13 +515,23 @@ public class CodeGenerator
 
         public override SyntaxNode VisitQualifiedName(QualifiedNameSyntax node)
         {
-            if (model.GetSymbolInfo(node).Symbol is INamedTypeSymbol symbol &&
-                typeNames.TryGetValue(symbol.OriginalDefinition, out var readonlyName))
+            if (TryGetReadonlyName(model.GetTypeInfo(node).Type, out var readonlyName))
             {
                 return SyntaxFactory.IdentifierName(readonlyName).WithTriviaFrom(node);
             }
 
             return base.VisitQualifiedName(node);
+        }
+
+        private bool TryGetReadonlyName(ITypeSymbol type, out string readonlyName)
+        {
+            if (type != null && typeNames.TryGetValue(type.OriginalDefinition, out readonlyName))
+            {
+                return true;
+            }
+
+            readonlyName = string.Empty;
+            return false;
         }
 
         public override SyntaxNode VisitConstructorDeclaration(ConstructorDeclarationSyntax node)
