@@ -2,6 +2,9 @@
 
 All notable changes to this project will be documented in this file.
 
+## v0.2.2
+- Rewrites fully qualified entity member references in generated EF Core configurations, including `nameof(...)` expressions.
+
 ## v0.2.1
 - Fixed fully qualified entity references in generated EF Core configurations so they point to the generated readonly entity type.
 
