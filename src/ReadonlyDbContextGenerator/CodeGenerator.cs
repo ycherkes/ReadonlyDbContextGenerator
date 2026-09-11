@@ -24,6 +24,17 @@ public class CodeGenerator
             generatedTypeNames[dbContext.TypeSymbol] = GetReadonlyTypeName(dbContext.TypeSymbol.Name);
         }
 
+        // Register entity type configuration classes (e.g. FooEntityConfig -> ReadOnlyFooEntityConfig)
+        // so that references to them (such as `new FooEntityConfig()` inside OnModelCreating) are
+        // rewritten to point at the generated readonly configuration classes instead of the originals.
+        foreach (var config in info.Configurations)
+        {
+            if (config.ConfigType != null)
+            {
+                generatedTypeNames[config.ConfigType] = GetReadonlyTypeName(config.SyntaxNode.Identifier.Text);
+            }
+        }
+
         foreach (var dbContext in info.DbContexts)
         {
             foreach (var external in dbContext.ExternalEntities)
@@ -520,7 +531,9 @@ public class CodeGenerator
 
         public override SyntaxNode VisitQualifiedName(QualifiedNameSyntax node)
         {
-            if (TryGetReadonlyName(model.GetTypeInfo(node).Type, out var readonlyName))
+            var typeSymbol = model.GetTypeInfo(node).Type ?? model.GetSymbolInfo(node).Symbol as ITypeSymbol;
+
+            if (TryGetReadonlyName(typeSymbol, out var readonlyName))
             {
                 return SyntaxFactory.IdentifierName(readonlyName).WithTriviaFrom(node);
             }

@@ -109,6 +109,7 @@ public class ReadOnlyDbContextGenerator : IIncrementalGenerator
         return new EntityConfigInfo
         {
             EntityType = entityType,
+            ConfigType = typeSymbol.OriginalDefinition,
             SyntaxNode = classDecl
         };
     }

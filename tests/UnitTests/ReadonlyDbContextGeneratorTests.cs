@@ -118,7 +118,7 @@ public class ReadonlyDbContextGeneratorTests
 
             namespace Sample.Entities
             {
-                public class PurchaseOrder
+                public class Widget
                 {
                     public int Id { get; set; }
                 }
@@ -128,17 +128,17 @@ public class ReadonlyDbContextGeneratorTests
             {
                 public class ApplicationContext : DbContext
                 {
-                    public DbSet<Entities.PurchaseOrder> PurchaseOrders { get; set; } = null!;
+                    public DbSet<Entities.Widget> Widgets { get; set; } = null!;
                 }
             }
 
             namespace Sample.Configurations
             {
-                public class PurchaseOrderConfiguration : IEntityTypeConfiguration<Sample.Entities.PurchaseOrder>
+                public class WidgetConfiguration : IEntityTypeConfiguration<Sample.Entities.Widget>
                 {
-                    public void Configure(EntityTypeBuilder<Sample.Entities.PurchaseOrder> builder)
+                    public void Configure(EntityTypeBuilder<Sample.Entities.Widget> builder)
                     {
-                        builder.HasFilter($"{nameof(Sample.Entities.PurchaseOrder.Id)} IS NOT NULL");
+                        builder.HasFilter($"{nameof(Sample.Entities.Widget.Id)} IS NOT NULL");
                     }
                 }
             }
@@ -159,13 +159,79 @@ public class ReadonlyDbContextGeneratorTests
         driver = driver.RunGenerators(compilation);
 
         var generatedConfiguration = Assert.Single(driver.GetRunResult().Results.Single().GeneratedSources,
-            sourceResult => sourceResult.SourceText.ToString().Contains("class ReadOnlyPurchaseOrderConfiguration", StringComparison.Ordinal));
+            sourceResult => sourceResult.SourceText.ToString().Contains("class ReadOnlyWidgetConfiguration", StringComparison.Ordinal));
         var generatedSource = generatedConfiguration.SourceText.ToString();
 
-        Assert.Contains("IEntityTypeConfiguration<ReadOnlyPurchaseOrder>", generatedSource);
-        Assert.Contains("EntityTypeBuilder<ReadOnlyPurchaseOrder>", generatedSource);
-        Assert.Contains("nameof(ReadOnlyPurchaseOrder.Id)", generatedSource);
-        Assert.DoesNotContain("Sample.Entities.ReadOnlyPurchaseOrder", generatedSource);
+        Assert.Contains("IEntityTypeConfiguration<ReadOnlyWidget>", generatedSource);
+        Assert.Contains("EntityTypeBuilder<ReadOnlyWidget>", generatedSource);
+        Assert.Contains("nameof(ReadOnlyWidget.Id)", generatedSource);
+        Assert.DoesNotContain("Sample.Entities.ReadOnlyWidget", generatedSource);
+    }
+
+    [Fact]
+    public void RewritesEntityConfigurationClassReferencesInsideOnModelCreating()
+    {
+        const string source = /* lang=c#-test */ """
+            using Microsoft.EntityFrameworkCore;
+            using Microsoft.EntityFrameworkCore.Metadata.Builders;
+
+            namespace Sample.Entities
+            {
+                public class Widget
+                {
+                    public int Id { get; set; }
+                }
+            }
+
+            namespace Sample.Configurations
+            {
+                public class WidgetConfiguration : IEntityTypeConfiguration<Sample.Entities.Widget>
+                {
+                    public void Configure(EntityTypeBuilder<Sample.Entities.Widget> builder)
+                    {
+                        builder.HasKey(x => x.Id);
+                    }
+                }
+            }
+
+            namespace Sample
+            {
+                public class ApplicationContext : DbContext
+                {
+                    public DbSet<Entities.Widget> Widgets { get; set; } = null!;
+
+                    protected override void OnModelCreating(ModelBuilder modelBuilder)
+                    {
+                        modelBuilder.ApplyConfiguration(new Configurations.WidgetConfiguration());
+                    }
+                }
+            }
+            """;
+
+        var compilation = CSharpCompilation.Create(
+            assemblyName: "EntityConfigReferenceRegression",
+            syntaxTrees: [CSharpSyntaxTree.ParseText(source)],
+            references:
+            [
+                MetadataReference.CreateFromFile(typeof(object).Assembly.Location),
+                MetadataReference.CreateFromFile(typeof(DbContext).Assembly.Location)
+            ],
+            options: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+
+        GeneratorDriver driver = CSharpGeneratorDriver.Create(
+            new ReadonlyDbContextGenerator.ReadOnlyDbContextGenerator().AsSourceGenerator());
+        driver = driver.RunGenerators(compilation);
+
+        var generatedDbContext = Assert.Single(driver.GetRunResult().Results.Single().GeneratedSources,
+            sourceResult => sourceResult.SourceText.ToString().Contains("class ReadOnlyApplicationContext", StringComparison.Ordinal));
+        var generatedSource = generatedDbContext.SourceText.ToString();
+
+        // The generated readonly DbContext must apply the generated readonly entity configuration,
+        // not the original mutable one, otherwise the readonly entity ends up unconfigured.
+        Assert.Contains("new ReadOnlyWidgetConfiguration()", generatedSource);
+        Assert.DoesNotContain("new WidgetConfiguration()", generatedSource);
+        Assert.DoesNotContain("new Configurations.WidgetConfiguration()", generatedSource);
+        Assert.DoesNotContain("new Configurations.ReadOnlyWidgetConfiguration()", generatedSource);
     }
 
     [Fact]
