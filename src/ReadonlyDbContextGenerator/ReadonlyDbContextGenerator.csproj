@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 	<PropertyGroup>
 		<Authors>Yevhen Cherkes</Authors>
 		<Copyright>Yevhen Cherkes 2024 - $([System.DateTime]::Now.Year)</Copyright>
@@ -19,7 +19,7 @@
 		<RepositoryUrl>https://github.com/ycherkes/ReadonlyDbContextGenerator</RepositoryUrl>
 		<TargetFramework>netstandard2.0</TargetFramework>
 		<Title>Readonly DbContext Generator</Title>
-		<Version>0.2.2</Version>
+		<Version>0.2.3</Version>
 		<SuppressDependenciesWhenPacking>true</SuppressDependenciesWhenPacking>
 	</PropertyGroup>
 

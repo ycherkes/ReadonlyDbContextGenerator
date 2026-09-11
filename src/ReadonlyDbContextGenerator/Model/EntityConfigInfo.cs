@@ -6,5 +6,6 @@ namespace ReadonlyDbContextGenerator.Model;
 internal class EntityConfigInfo
 {
     public ITypeSymbol EntityType { get; set; }
+    public ITypeSymbol ConfigType { get; set; }
     public ClassDeclarationSyntax SyntaxNode { get; set; }
 }
