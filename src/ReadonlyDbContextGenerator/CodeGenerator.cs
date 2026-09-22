@@ -783,6 +783,7 @@ public class CodeGenerator
                 return property
                     .WithType(queryableType)
                     .WithAccessorList(accessorList)
+                    .WithExpressionBody(null)
                     .WithInitializer(null)
                     .WithSemicolonToken(default)
                     .WithModifiers(SyntaxFactory.TokenList()); // Remove modifiers like `public`

@@ -56,6 +56,43 @@ public class ReadonlyDbContextGeneratorTests
     }
 
     [Fact]
+    public void GeneratedInterfaceCompilesForExpressionBodiedDbSetProperty()
+    {
+        const string source = /* lang=c#-test */ """
+            using Microsoft.EntityFrameworkCore;
+
+            public class Entity
+            {
+                public int Id { get; set; }
+            }
+
+            public class ApplicationContext : DbContext
+            {
+                public DbSet<Entity> Entities => Set<Entity>();
+            }
+            """;
+
+        var compilation = CSharpCompilation.Create(
+            assemblyName: "ExpressionBodiedDbSetRegression",
+            syntaxTrees: [CSharpSyntaxTree.ParseText(source)],
+            references:
+            [
+                MetadataReference.CreateFromFile(typeof(object).Assembly.Location),
+                MetadataReference.CreateFromFile(typeof(DbContext).Assembly.Location)
+            ],
+            options: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+
+        GeneratorDriver driver = CSharpGeneratorDriver.Create(
+            new ReadonlyDbContextGenerator.ReadOnlyDbContextGenerator().AsSourceGenerator());
+        driver = driver.RunGeneratorsAndUpdateCompilation(compilation, out var outputCompilation, out _);
+
+        var generatedInterface = Assert.Single(driver.GetRunResult().Results.Single().GeneratedSources,
+            sourceResult => sourceResult.HintName == "IReadOnlyApplicationContext.g.cs");
+        Assert.DoesNotContain("=>", generatedInterface.SourceText.ToString());
+        Assert.DoesNotContain(outputCompilation.GetDiagnostics(), diagnostic => diagnostic.Id == "CS8057");
+    }
+
+    [Fact]
     public void GeneratesDistinctTypesForEntitiesWithTheSameShortNameAndMergesPartialDeclarations()
     {
         var source = CSharpSyntaxTree.ParseText("""
