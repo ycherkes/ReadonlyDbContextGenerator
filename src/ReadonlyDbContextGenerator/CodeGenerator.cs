@@ -259,7 +259,7 @@ public class CodeGenerator
                     var propTypeSymbol = declaredSymbol?.Type ?? sm.GetTypeInfo(prop.Type).Type;
                     if (prop.Initializer != null)
                     {
-                        var rewriter = new TypeReferenceRewriter(generatedTypeNames, sm);
+                        var rewriter = new PropertyInitializerRewriter(generatedTypeNames, sm);
                         prop = prop.WithInitializer((EqualsValueClauseSyntax)rewriter.Visit(prop.Initializer));
                     }
 
@@ -483,7 +483,7 @@ public class CodeGenerator
 
     private static bool IsEntityType(ITypeSymbol typeSymbol, IReadOnlyList<EntityInfo> allEntities)
     {
-        if (typeSymbol == null)
+        if (typeSymbol == null || !typeSymbol.IsReferenceType)
         {
             return false;
         }
@@ -538,6 +538,185 @@ public class CodeGenerator
         }
 
         return null;
+    }
+
+    private sealed class PropertyInitializerRewriter(
+        IReadOnlyDictionary<ITypeSymbol, string> typeNames, SemanticModel model) : CSharpSyntaxRewriter
+    {
+        public override SyntaxNode VisitTypeArgumentList(TypeArgumentListSyntax node)
+        {
+            return new TypeReferenceRewriter(typeNames, model).Visit(node);
+        }
+
+        public override SyntaxNode VisitMemberAccessExpression(MemberAccessExpressionSyntax node)
+        {
+            var rewritten = (MemberAccessExpressionSyntax)base.VisitMemberAccessExpression(node);
+            var symbol = model.GetSymbolInfo(node).Symbol;
+            var copiedMember = symbol is IPropertySymbol { IsStatic: true } property
+                    && typeNames.ContainsKey(property.ContainingType.OriginalDefinition)
+                || symbol is INamedTypeSymbol { ContainingType: not null } nestedType
+                    && typeNames.ContainsKey(nestedType.ContainingType.OriginalDefinition);
+            if (copiedMember
+                && model.GetSymbolInfo(node.Expression).Symbol is ITypeSymbol receiverType
+                && typeNames.TryGetValue(receiverType.OriginalDefinition, out var readonlyName))
+            {
+                return rewritten.WithExpression(
+                    SyntaxFactory.IdentifierName(readonlyName).WithTriviaFrom(node.Expression));
+            }
+
+            return rewritten;
+        }
+
+        public override SyntaxNode VisitInvocationExpression(InvocationExpressionSyntax node)
+        {
+            var rewritten = (InvocationExpressionSyntax)base.VisitInvocationExpression(node);
+            if (model.GetOperation(node) is Microsoft.CodeAnalysis.Operations.INameOfOperation
+                && node.ArgumentList.Arguments.Count == 1
+                && model.GetSymbolInfo(node.ArgumentList.Arguments[0].Expression).Symbol is ITypeSymbol type
+                && typeNames.TryGetValue(type.OriginalDefinition, out var readonlyName))
+            {
+                var argument = rewritten.ArgumentList.Arguments[0];
+                return rewritten.WithArgumentList(rewritten.ArgumentList.WithArguments(
+                    SyntaxFactory.SingletonSeparatedList(argument.WithExpression(
+                        SyntaxFactory.IdentifierName(readonlyName).WithTriviaFrom(argument.Expression)))));
+            }
+
+            return rewritten;
+        }
+
+        public override SyntaxNode VisitParameter(ParameterSyntax node)
+        {
+            var rewritten = (ParameterSyntax)base.VisitParameter(node);
+            return node.Type == null
+                ? rewritten
+                : rewritten.WithType((TypeSyntax)new TypeReferenceRewriter(typeNames, model).Visit(node.Type));
+        }
+
+        public override SyntaxNode VisitLocalFunctionStatement(LocalFunctionStatementSyntax node)
+        {
+            var rewrittenReturnType = (TypeSyntax)new TypeReferenceRewriter(typeNames, model).Visit(node.ReturnType);
+            var rewritten = (LocalFunctionStatementSyntax)base.VisitLocalFunctionStatement(node);
+            return rewritten.WithReturnType(rewrittenReturnType);
+        }
+
+        public override SyntaxNode VisitParenthesizedLambdaExpression(ParenthesizedLambdaExpressionSyntax node)
+        {
+            var rewritten = (ParenthesizedLambdaExpressionSyntax)base.VisitParenthesizedLambdaExpression(node);
+            return node.ReturnType == null
+                ? rewritten
+                : rewritten.WithReturnType((TypeSyntax)new TypeReferenceRewriter(typeNames, model).Visit(node.ReturnType));
+        }
+
+        public override SyntaxNode VisitDeclarationExpression(DeclarationExpressionSyntax node)
+        {
+            var rewrittenType = (TypeSyntax)new TypeReferenceRewriter(typeNames, model).Visit(node.Type);
+            var rewritten = (DeclarationExpressionSyntax)base.VisitDeclarationExpression(node);
+            return rewritten.WithType(rewrittenType);
+        }
+
+        public override SyntaxNode VisitTypeConstraint(TypeConstraintSyntax node)
+        {
+            return node.WithType((TypeSyntax)new TypeReferenceRewriter(typeNames, model).Visit(node.Type));
+        }
+
+        public override SyntaxNode VisitTypeOfExpression(TypeOfExpressionSyntax node)
+        {
+            return node.WithType((TypeSyntax)new TypeReferenceRewriter(typeNames, model).Visit(node.Type));
+        }
+
+        public override SyntaxNode VisitVariableDeclaration(VariableDeclarationSyntax node)
+        {
+            var rewrittenType = (TypeSyntax)new TypeReferenceRewriter(typeNames, model).Visit(node.Type);
+            var rewritten = (VariableDeclarationSyntax)base.VisitVariableDeclaration(node);
+            return rewritten.WithType(rewrittenType);
+        }
+
+        public override SyntaxNode VisitForEachStatement(ForEachStatementSyntax node)
+        {
+            var rewrittenType = (TypeSyntax)new TypeReferenceRewriter(typeNames, model).Visit(node.Type);
+            var rewritten = (ForEachStatementSyntax)base.VisitForEachStatement(node);
+            return rewritten.WithType(rewrittenType);
+        }
+
+        public override SyntaxNode VisitFromClause(FromClauseSyntax node)
+        {
+            var rewritten = (FromClauseSyntax)base.VisitFromClause(node);
+            return node.Type == null
+                ? rewritten
+                : rewritten.WithType((TypeSyntax)new TypeReferenceRewriter(typeNames, model).Visit(node.Type));
+        }
+
+        public override SyntaxNode VisitJoinClause(JoinClauseSyntax node)
+        {
+            var rewritten = (JoinClauseSyntax)base.VisitJoinClause(node);
+            return node.Type == null
+                ? rewritten
+                : rewritten.WithType((TypeSyntax)new TypeReferenceRewriter(typeNames, model).Visit(node.Type));
+        }
+
+        public override SyntaxNode VisitObjectCreationExpression(ObjectCreationExpressionSyntax node)
+        {
+            var rewrittenType = (TypeSyntax)new TypeReferenceRewriter(typeNames, model).Visit(node.Type);
+            var rewritten = (ObjectCreationExpressionSyntax)base.VisitObjectCreationExpression(node);
+            return rewritten.WithType(rewrittenType);
+        }
+
+        public override SyntaxNode VisitArrayCreationExpression(ArrayCreationExpressionSyntax node)
+        {
+            var rewrittenElementType = (TypeSyntax)new TypeReferenceRewriter(typeNames, model).Visit(node.Type.ElementType);
+            var rewritten = (ArrayCreationExpressionSyntax)base.VisitArrayCreationExpression(node);
+            return rewritten.WithType(rewritten.Type.WithElementType(rewrittenElementType));
+        }
+
+        public override SyntaxNode VisitDefaultExpression(DefaultExpressionSyntax node)
+        {
+            return node.WithType((TypeSyntax)new TypeReferenceRewriter(typeNames, model).Visit(node.Type));
+        }
+
+        public override SyntaxNode VisitDeclarationPattern(DeclarationPatternSyntax node)
+        {
+            var rewrittenType = (TypeSyntax)new TypeReferenceRewriter(typeNames, model).Visit(node.Type);
+            var rewritten = (DeclarationPatternSyntax)base.VisitDeclarationPattern(node);
+            return rewritten.WithType(rewrittenType);
+        }
+
+        public override SyntaxNode VisitTypePattern(TypePatternSyntax node)
+        {
+            return node.WithType((TypeSyntax)new TypeReferenceRewriter(typeNames, model).Visit(node.Type));
+        }
+
+        public override SyntaxNode VisitConstantPattern(ConstantPatternSyntax node)
+        {
+            return model.GetSymbolInfo(node.Expression).Symbol is ITypeSymbol
+                ? node.WithExpression((ExpressionSyntax)new TypeReferenceRewriter(typeNames, model).Visit(node.Expression))
+                : base.VisitConstantPattern(node);
+        }
+
+        public override SyntaxNode VisitRecursivePattern(RecursivePatternSyntax node)
+        {
+            var rewritten = (RecursivePatternSyntax)base.VisitRecursivePattern(node);
+            return node.Type == null
+                ? rewritten
+                : rewritten.WithType((TypeSyntax)new TypeReferenceRewriter(typeNames, model).Visit(node.Type));
+        }
+
+        public override SyntaxNode VisitCastExpression(CastExpressionSyntax node)
+        {
+            var rewrittenType = (TypeSyntax)new TypeReferenceRewriter(typeNames, model).Visit(node.Type);
+            var rewritten = (CastExpressionSyntax)base.VisitCastExpression(node);
+            return rewritten.WithType(rewrittenType);
+        }
+
+        public override SyntaxNode VisitBinaryExpression(BinaryExpressionSyntax node)
+        {
+            var rewritten = (BinaryExpressionSyntax)base.VisitBinaryExpression(node);
+            if (node.IsKind(SyntaxKind.AsExpression) || node.IsKind(SyntaxKind.IsExpression))
+            {
+                return rewritten.WithRight((TypeSyntax)new TypeReferenceRewriter(typeNames, model).Visit(node.Right));
+            }
+
+            return rewritten;
+        }
     }
 
     public class TypeReferenceRewriter(IReadOnlyDictionary<ITypeSymbol, string> typeNames, SemanticModel model) : CSharpSyntaxRewriter

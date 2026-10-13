@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 ## v0.2.5
 - Rewrite entity type references in property initializers, including nested owned objects, aliases, and fully qualified types, so generated read-only properties are initialized with their read-only counterparts.
+- Preserve static method receivers in property initializers while rewriting explicit type operands because methods are not copied to generated entities.
+- Rewrite entity types in `default`, casts, and `as`/`is` type expressions within property initializers.
+- Rewrite entity type arguments in generic initializer calls without changing method names or static receivers.
+- Rewrite entity types in declaration, type, and recursive patterns within conditional and switch initializers.
+- Rewrite local, foreach, and explicitly typed query declarations inside initializer lambdas.
+- Rewrite receivers for copied static properties while preserving receivers for removed methods.
+- Rewrite entity operands in `typeof` initializers while preserving scalar value types.
+- Preserve inherited static-property receivers when their declaring external base type is not generated.
+- Rewrite explicit lambda and anonymous-method parameters and local-function signature types.
+- Rewrite entity type operands in `nameof` while preserving scalar types and method receivers.
+- Rewrite qualifiers for copied nested enum values, explicit lambda return types, out/deconstruction declaration types, and local-function type constraints.
+- Rewrite entity array creation initializers, including aliased and fully qualified element types, while preserving dimension expressions.
+- Exclude value types from navigation discovery so struct and record-struct properties retain their original types and initializers.
 
 ## v0.2.3
 - Fixed generated readonly `DbContext` classes calling the original (non-readonly) `IEntityTypeConfiguration<T>` classes instead of their generated readonly counterparts (e.g. `new FooEntityConfig()` instead of `new ReadOnlyFooEntityConfig()`). This caused readonly entities to be left without their EF Core relationship/index configuration, leading to `InvalidOperationException: Unable to determine the relationship...` at runtime whenever an entity configuration class was referenced by name inside `OnModelCreating` (directly or via a helper method).

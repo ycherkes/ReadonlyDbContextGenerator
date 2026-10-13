@@ -39,11 +39,15 @@ public class ReadonlyDbContextGeneratorTests
                 """;
         var source = /* lang=c#-test */ $$"""
             using Microsoft.EntityFrameworkCore;
+            using System.Collections.Generic;
+            using System.Linq;
+            using static System.Array;
             using NestedAlias = Sample.NestedValue;
+            using EntityAlias = Sample.RootEntity;
 
             namespace Sample
             {
-                public class RootEntity
+                public class RootEntity : ExternalBase
                 {
                     public int Id { get; set; }
                     public OwnedDocument Document { get; set; } = {{creation}}()
@@ -55,6 +59,91 @@ public class ReadonlyDbContextGeneratorTests
                         Nested = new Sample.NestedValue()
                     };
                     public string Label { get; set; } = new string('x', 2);
+                    public string MethodLabel { get; set; } = RootEntity.CreateLabel();
+                    public string QualifiedLabel { get; set; } = Sample.RootEntity.CreateLabel();
+                    public string AliasedLabel { get; set; } = EntityAlias.CreateLabel<string>();
+                    public ScalarValue Value { get; set; } = new ScalarValue();
+                    public ScalarValue? OptionalValue { get; set; } = new Sample.ScalarValue();
+                    public ScalarRecord RecordValue { get; set; } = new ScalarRecord();
+                    public ICollection<NestedValue> Children { get; set; } = new NestedValue[0];
+                    public ICollection<NestedValue> QualifiedChildren { get; set; } = new Sample.NestedValue[RootEntity.GetArrayLength()];
+                    public ICollection<NestedValue> AliasedChildren { get; set; } = new NestedAlias[] { new NestedAlias { Enabled = true } };
+                    public int[] Numbers { get; set; } = new int[RootEntity.GetArrayLength()];
+                    public NestedValue DefaultChild { get; set; } = default(NestedValue);
+                    public NestedValue CastChild { get; set; } = (Sample.NestedValue)RootEntity.GetObject();
+                    public NestedValue AsChild { get; set; } = RootEntity.GetObject() as NestedAlias;
+                    public bool IsChild { get; set; } = RootEntity.GetObject() is NestedAlias;
+                    public ScalarValue DefaultValue { get; set; } = default(ScalarValue);
+                    public ICollection<NestedValue> EmptyChildren { get; set; } = System.Array.Empty<NestedValue>();
+                    public IEnumerable<NestedValue> EnumerableChildren { get; set; } = Enumerable.Empty<Sample.NestedValue>().ToArray();
+                    public ICollection<NestedValue> UnqualifiedChildren { get; set; } = Empty<NestedAlias>();
+                    public ICollection<NestedValue> FactoryChildren { get; set; } = EntityAlias.CreateArray<NestedAlias>();
+                    public ScalarValue[] EmptyValues { get; set; } = System.Array.Empty<ScalarValue>();
+                    public NestedValue PatternChild { get; set; } = RootEntity.GetObject() is NestedValue value ? value : new NestedValue();
+                    public NestedValue SwitchChild { get; set; } = RootEntity.GetObject() switch
+                    {
+                        Sample.NestedValue value => value,
+                        _ => new NestedValue()
+                    };
+                    public NestedValue RecursiveChild { get; set; } = RootEntity.GetObject() is NestedAlias { Enabled: true } value ? value : new NestedValue();
+                    public bool TypePattern { get; set; } = RootEntity.GetObject() switch { NestedAlias => true, _ => false };
+                    public bool ScalarPattern { get; set; } = RootEntity.GetObject() is ScalarValue value && value.Number == 0;
+                    public System.Func<object> LocalFactory { get; set; } = () =>
+                    {
+                        Sample.NestedValue value = new NestedAlias();
+                        foreach (NestedAlias child in new NestedValue[] { value })
+                            return child;
+                        return value;
+                    };
+                    public System.Func<object> QueryFactory { get; set; } = () =>
+                        (from NestedAlias child in new NestedValue[] { new NestedValue() }
+                         join Sample.NestedValue other in new NestedValue[] { new NestedValue() }
+                             on child.Enabled equals other.Enabled
+                         select child).ToArray();
+                    public NestedValue StaticChild { get; set; } = NestedValue.Default;
+                    public NestedValue QualifiedStaticChild { get; set; } = Sample.NestedValue.Default;
+                    public NestedValue AliasedStaticChild { get; set; } = NestedAlias.Default;
+                    public System.Type NavigationType { get; set; } = typeof(NestedAlias);
+                    public System.Type QualifiedNavigationType { get; set; } = typeof(Sample.NestedValue);
+                    public System.Type ScalarType { get; set; } = typeof(ScalarValue);
+                    public string ExternalLabel { get; set; } = RootEntity.DefaultLabel;
+                    public string InheritedLabel { get; set; } = NestedValue.SourceLabel;
+                    public NestedValue LambdaChild { get; set; } =
+                        new System.Func<NestedValue, NestedValue>((NestedAlias value) => value)(new NestedValue());
+                    public NestedValue AnonymousChild { get; set; } =
+                        new System.Func<NestedValue, NestedValue>(delegate(Sample.NestedValue value) { return value; })(new NestedValue());
+                    public NestedValue LocalFunctionChild { get; set; } = new System.Func<NestedValue>(() =>
+                    {
+                        NestedAlias Make(Sample.NestedValue value) => value ?? new NestedValue();
+                        return Make(new NestedValue());
+                    })();
+                    public string EntityName { get; set; } = nameof(NestedAlias);
+                    public string QualifiedEntityName { get; set; } = nameof(Sample.NestedValue);
+                    public string ScalarName { get; set; } = nameof(ScalarValue);
+                    public string MethodName { get; set; } = nameof(RootEntity.GetObject);
+                    public enum State { Active }
+                    public State Status { get; set; } = RootEntity.State.Active;
+                    public State QualifiedStatus { get; set; } = Sample.RootEntity.State.Active;
+                    public State AliasedStatus { get; set; } = EntityAlias.State.Active;
+                    public NestedValue TypedLambdaChild { get; set; } =
+                        new System.Func<NestedValue>(Sample.NestedValue () => new NestedAlias())();
+                    public NestedValue OutChild { get; set; } = new System.Func<NestedValue>(() =>
+                    {
+                        bool Try(out NestedValue value) { value = new NestedValue(); return true; }
+                        Try(out NestedAlias result);
+                        (NestedValue first, NestedAlias second) = (result, new NestedValue());
+                        return first;
+                    })();
+                    public NestedValue ConstrainedChild { get; set; } = new System.Func<NestedValue>(() =>
+                    {
+                        T Make<T>() where T : NestedAlias, new() => new T();
+                        return Make<NestedValue>();
+                    })();
+                    public static T[] CreateArray<T>() => System.Array.Empty<T>();
+                    public static object GetObject() => null;
+                    public static int GetArrayLength() => 0;
+                    public static string CreateLabel() => "label";
+                    public static string CreateLabel<T>() => typeof(T).Name;
                 }
 
                 public class OwnedDocument
@@ -62,10 +151,23 @@ public class ReadonlyDbContextGeneratorTests
                     public NestedValue Nested { get; set; }
                 }
 
-                public class NestedValue
+                public class SourceBase
+                {
+                    public static string SourceLabel { get; } = "source";
+                }
+
+                public class NestedValue : SourceBase
                 {
                     public bool Enabled { get; set; }
+                    public static NestedValue Default { get; } = new NestedValue();
                 }
+
+                public struct ScalarValue
+                {
+                    public int Number { get; set; }
+                }
+
+                public record struct ScalarRecord(int Number);
 
                 public class ApplicationContext : DbContext
                 {
@@ -82,6 +184,17 @@ public class ReadonlyDbContextGeneratorTests
             .Split(Path.PathSeparator)
             .Select(path => MetadataReference.CreateFromFile(path))
             .Concat([MetadataReference.CreateFromFile(typeof(DbContext).Assembly.Location)]);
+        var externalCompilation = CSharpCompilation.Create("ExternalInitializerBase",
+            [CSharpSyntaxTree.ParseText(/* lang=c#-test */ """
+                public class ExternalBase
+                {
+                    public static string DefaultLabel { get; } = "external";
+                }
+                """)], references, new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+        using var externalAssembly = new MemoryStream();
+        var externalResult = externalCompilation.Emit(externalAssembly);
+        Assert.True(externalResult.Success, string.Join(Environment.NewLine, externalResult.Diagnostics));
+        references = references.Append(MetadataReference.CreateFromImage(externalAssembly.ToArray()));
         var compilation = CSharpCompilation.Create("OwnedInitializerRegression",
             [CSharpSyntaxTree.ParseText(source)], references,
             new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
@@ -102,6 +215,70 @@ public class ReadonlyDbContextGeneratorTests
             .Single(property => property.Identifier.ValueText == "Label").Initializer;
         Assert.True(SyntaxFactory.AreEquivalent(
             SyntaxFactory.ParseExpression("new string('x', 2)"), scalarInitializer!.Value));
+        Assert.Contains("RootEntity.CreateLabel()", generated);
+        Assert.Contains("Sample.RootEntity.CreateLabel()", generated);
+        Assert.Contains("EntityAlias.CreateLabel<string>()", generated);
+        Assert.DoesNotContain("ReadOnlyRootEntity.CreateLabel", generated);
+        Assert.Contains("new ScalarValue()", generated);
+        Assert.Contains("new Sample.ScalarValue()", generated);
+        Assert.Contains("new ScalarRecord()", generated);
+        Assert.Contains("new ReadOnlyNestedValue[0]", generated);
+        Assert.Contains("new ReadOnlyNestedValue[RootEntity.GetArrayLength()]", generated);
+        Assert.Contains("new ReadOnlyNestedValue[]", generated);
+        Assert.Contains("new int[RootEntity.GetArrayLength()]", generated);
+        Assert.DoesNotContain("ReadOnlyRootEntity.GetArrayLength", generated);
+        Assert.Contains("default(ReadOnlyNestedValue)", generated);
+        Assert.Contains("(ReadOnlyNestedValue)RootEntity.GetObject()", generated);
+        Assert.Contains("RootEntity.GetObject() as ReadOnlyNestedValue", generated);
+        Assert.Contains("RootEntity.GetObject() is ReadOnlyNestedValue", generated);
+        Assert.Contains("default(ScalarValue)", generated);
+        Assert.DoesNotContain("ReadOnlyRootEntity.GetObject", generated);
+        Assert.Contains("System.Array.Empty<ReadOnlyNestedValue>()", generated);
+        Assert.Contains("Enumerable.Empty<ReadOnlyNestedValue>().ToArray()", generated);
+        Assert.Contains("= Empty<ReadOnlyNestedValue>()", generated);
+        Assert.Contains("EntityAlias.CreateArray<ReadOnlyNestedValue>()", generated);
+        Assert.Contains("System.Array.Empty<ScalarValue>()", generated);
+        Assert.DoesNotContain("ReadOnlyRootEntity.CreateArray", generated);
+        Assert.Contains("is ReadOnlyNestedValue value ? value : new ReadOnlyNestedValue()", generated);
+        Assert.Contains("ReadOnlyNestedValue value => value", generated);
+        Assert.Contains("is ReadOnlyNestedValue { Enabled: true } value", generated);
+        Assert.Contains("ReadOnlyNestedValue => true", generated);
+        Assert.Contains("is ScalarValue value", generated);
+        Assert.Contains("ReadOnlyNestedValue value = new ReadOnlyNestedValue()", generated);
+        Assert.Contains("foreach (ReadOnlyNestedValue child in", generated);
+        Assert.Contains("from ReadOnlyNestedValue child in", generated);
+        Assert.Contains("join ReadOnlyNestedValue other in", generated);
+        Assert.Contains("= ReadOnlyNestedValue.Default", generated);
+        Assert.DoesNotContain("= NestedValue.Default", generated);
+        Assert.DoesNotContain("= Sample.NestedValue.Default", generated);
+        Assert.DoesNotContain("= NestedAlias.Default", generated);
+        Assert.Contains("typeof(ReadOnlyNestedValue)", generated);
+        Assert.DoesNotContain("typeof(NestedAlias)", generated);
+        Assert.DoesNotContain("typeof(Sample.NestedValue)", generated);
+        Assert.Contains("typeof(ScalarValue)", generated);
+        Assert.Contains("= RootEntity.DefaultLabel", generated);
+        Assert.Contains("= ReadOnlyNestedValue.SourceLabel", generated);
+        Assert.Contains("(ReadOnlyNestedValue value) => value", generated);
+        Assert.Contains("delegate (ReadOnlyNestedValue value)", generated);
+        Assert.Contains("ReadOnlyNestedValue Make(ReadOnlyNestedValue value)", generated);
+        Assert.Contains("nameof(ReadOnlyNestedValue)", generated);
+        Assert.DoesNotContain("nameof(NestedAlias)", generated);
+        Assert.DoesNotContain("nameof(Sample.NestedValue)", generated);
+        Assert.Contains("nameof(ScalarValue)", generated);
+        Assert.Contains("nameof(RootEntity.GetObject)", generated);
+        Assert.Contains("= ReadOnlyRootEntity.State.Active", generated);
+        Assert.DoesNotContain("= RootEntity.State.Active", generated);
+        Assert.DoesNotContain("= Sample.RootEntity.State.Active", generated);
+        Assert.DoesNotContain("= EntityAlias.State.Active", generated);
+        var typedLambda = Assert.Single(CSharpSyntaxTree.ParseText(generated).GetRoot().DescendantNodes()
+            .OfType<Microsoft.CodeAnalysis.CSharp.Syntax.ParenthesizedLambdaExpressionSyntax>(),
+            lambda => lambda.ReturnType != null);
+        Assert.Equal("ReadOnlyNestedValue", typedLambda.ReturnType!.ToString());
+        Assert.Contains("out ReadOnlyNestedValue result", generated);
+        Assert.Contains("(ReadOnlyNestedValue first, ReadOnlyNestedValue second)", generated);
+        Assert.Contains("where T : ReadOnlyNestedValue, new()", generated);
+        Assert.DoesNotContain(driver.GetRunResult().Results.Single().GeneratedSources,
+            result => result.HintName.Contains("ReadOnlyScalar", StringComparison.Ordinal));
     }
 
     [Fact]
