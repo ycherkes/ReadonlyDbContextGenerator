@@ -59,6 +59,9 @@ public class ReadonlyDbContextGeneratorTests
                     public string MethodLabel { get; set; } = RootEntity.CreateLabel();
                     public string QualifiedLabel { get; set; } = Sample.RootEntity.CreateLabel();
                     public string AliasedLabel { get; set; } = EntityAlias.CreateLabel<string>();
+                    public ScalarValue Value { get; set; } = new ScalarValue();
+                    public ScalarValue? OptionalValue { get; set; } = new Sample.ScalarValue();
+                    public ScalarRecord RecordValue { get; set; } = new ScalarRecord();
                     public static string CreateLabel() => "label";
                     public static string CreateLabel<T>() => typeof(T).Name;
                 }
@@ -72,6 +75,13 @@ public class ReadonlyDbContextGeneratorTests
                 {
                     public bool Enabled { get; set; }
                 }
+
+                public struct ScalarValue
+                {
+                    public int Number { get; set; }
+                }
+
+                public record struct ScalarRecord(int Number);
 
                 public class ApplicationContext : DbContext
                 {
@@ -112,6 +122,11 @@ public class ReadonlyDbContextGeneratorTests
         Assert.Contains("Sample.RootEntity.CreateLabel()", generated);
         Assert.Contains("EntityAlias.CreateLabel<string>()", generated);
         Assert.DoesNotContain("ReadOnlyRootEntity.CreateLabel", generated);
+        Assert.Contains("new ScalarValue()", generated);
+        Assert.Contains("new Sample.ScalarValue()", generated);
+        Assert.Contains("new ScalarRecord()", generated);
+        Assert.DoesNotContain(driver.GetRunResult().Results.Single().GeneratedSources,
+            result => result.HintName.Contains("ReadOnlyScalar", StringComparison.Ordinal));
     }
 
     [Fact]

@@ -483,7 +483,7 @@ public class CodeGenerator
 
     private static bool IsEntityType(ITypeSymbol typeSymbol, IReadOnlyList<EntityInfo> allEntities)
     {
-        if (typeSymbol == null)
+        if (typeSymbol == null || !typeSymbol.IsReferenceType)
         {
             return false;
         }
