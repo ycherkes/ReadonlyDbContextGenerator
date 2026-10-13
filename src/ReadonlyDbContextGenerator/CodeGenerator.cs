@@ -549,6 +549,13 @@ public class CodeGenerator
             var rewritten = (ObjectCreationExpressionSyntax)base.VisitObjectCreationExpression(node);
             return rewritten.WithType(rewrittenType);
         }
+
+        public override SyntaxNode VisitArrayCreationExpression(ArrayCreationExpressionSyntax node)
+        {
+            var rewrittenElementType = (TypeSyntax)new TypeReferenceRewriter(typeNames, model).Visit(node.Type.ElementType);
+            var rewritten = (ArrayCreationExpressionSyntax)base.VisitArrayCreationExpression(node);
+            return rewritten.WithType(rewritten.Type.WithElementType(rewrittenElementType));
+        }
     }
 
     public class TypeReferenceRewriter(IReadOnlyDictionary<ITypeSymbol, string> typeNames, SemanticModel model) : CSharpSyntaxRewriter

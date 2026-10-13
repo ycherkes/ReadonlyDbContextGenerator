@@ -4,7 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## v0.2.5
 - Rewrite entity type references in property initializers, including nested owned objects, aliases, and fully qualified types, so generated read-only properties are initialized with their read-only counterparts.
-- Preserve static method receivers in property initializers; only object-creation types are rewritten because methods are not copied to generated entities.
+- Preserve static method receivers in property initializers; only object-creation types and array element types are rewritten because methods are not copied to generated entities.
+- Rewrite entity array creation initializers, including aliased and fully qualified element types, while preserving dimension expressions.
 - Exclude value types from navigation discovery so struct and record-struct properties retain their original types and initializers.
 
 ## v0.2.3
