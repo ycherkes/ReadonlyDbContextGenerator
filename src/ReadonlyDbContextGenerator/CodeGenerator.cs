@@ -253,15 +253,18 @@ public class CodeGenerator
         var modifiedMembers = entitySyntax.Members
             .Select(member =>
             {
+                if (member is FieldDeclarationSyntax field)
+                {
+                    var fieldType = (TypeSyntax)new TypeReferenceRewriter(generatedTypeNames, sm).Visit(field.Declaration.Type);
+                    var rewritten = (FieldDeclarationSyntax)new PropertyInitializerRewriter(generatedTypeNames, sm).Visit(field);
+                    return rewritten.WithDeclaration(rewritten.Declaration.WithType(fieldType));
+                }
+
                 if (member is PropertyDeclarationSyntax prop)
                 {
                     var declaredSymbol = sm.GetDeclaredSymbol(prop);
                     var propTypeSymbol = declaredSymbol?.Type ?? sm.GetTypeInfo(prop.Type).Type;
-                    if (prop.Initializer != null)
-                    {
-                        var rewriter = new PropertyInitializerRewriter(generatedTypeNames, sm);
-                        prop = prop.WithInitializer((EqualsValueClauseSyntax)rewriter.Visit(prop.Initializer));
-                    }
+                    prop = (PropertyDeclarationSyntax)new PropertyInitializerRewriter(generatedTypeNames, sm).Visit(prop);
 
                     // Handle navigation properties/entities (including collections and nullable refs)
                     var (navigationTargetSymbol, isCollection) = GetNavigationTargetType(propTypeSymbol);

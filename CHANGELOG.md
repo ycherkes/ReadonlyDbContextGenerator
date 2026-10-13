@@ -2,6 +2,9 @@
 
 All notable changes to this project will be documented in this file.
 
+## v0.2.6
+- Rewrite entity backing-field types and explicit type references in property accessor bodies, supporting lazily initialized navigations.
+
 ## v0.2.5
 - Rewrite entity type references in property initializers, including nested owned objects, aliases, and fully qualified types, so generated read-only properties are initialized with their read-only counterparts.
 - Preserve static method receivers in property initializers while rewriting explicit type operands because methods are not copied to generated entities.

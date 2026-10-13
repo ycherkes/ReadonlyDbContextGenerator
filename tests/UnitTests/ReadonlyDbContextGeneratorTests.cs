@@ -149,6 +149,14 @@ public class ReadonlyDbContextGeneratorTests
                 public class OwnedDocument
                 {
                     public NestedValue Nested { get; set; }
+                    private NestedValue _lazyValue;
+                    public NestedValue LazyValue
+                    {
+                        get => _lazyValue ??= new NestedAlias();
+                        set => _lazyValue = value;
+                    }
+                    private NestedValue _explicitValue = new NestedAlias();
+                    public NestedValue ExplicitValue => _explicitValue;
                 }
 
                 public class SourceBase
