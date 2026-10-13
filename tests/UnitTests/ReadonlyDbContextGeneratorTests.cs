@@ -9,6 +9,101 @@ namespace UnitTests;
 
 public class ReadonlyDbContextGeneratorTests
 {
+    [Theory]
+    [InlineData("new OwnedDocument", false)]
+    [InlineData("new", false)]
+    [InlineData("new OwnedDocument", true)]
+    [InlineData("new", true)]
+    public void RewritesOwnedEntityTypesInNestedPropertyInitializers(string creation, bool separateConfiguration)
+    {
+        var configuration = separateConfiguration
+            ? """
+                public class RootEntityConfiguration : Microsoft.EntityFrameworkCore.IEntityTypeConfiguration<RootEntity>
+                {
+                    public void Configure(Microsoft.EntityFrameworkCore.Metadata.Builders.EntityTypeBuilder<RootEntity> builder)
+                    {
+                        builder.OwnsOne(entity => entity.Document, document => document.OwnsOne(value => value.Nested));
+                        builder.Ignore(s => s.ExplicitDefault);
+                        builder.Ignore(s => s.Label);
+                    }
+                }
+                """
+            : "";
+        var modelBody = separateConfiguration
+            ? "builder.ApplyConfiguration(new RootEntityConfiguration());"
+            : """
+                builder.Entity<RootEntity>().OwnsOne(entity => entity.Document,
+                    document => document.OwnsOne(value => value.Nested));
+                builder.Entity<RootEntity>().Ignore(entity => entity.ExplicitDefault);
+                builder.Entity<RootEntity>().Ignore(entity => entity.Label);
+                """;
+        var source = /* lang=c#-test */ $$"""
+            using Microsoft.EntityFrameworkCore;
+            using NestedAlias = Sample.NestedValue;
+
+            namespace Sample
+            {
+                public class RootEntity
+                {
+                    public int Id { get; set; }
+                    public OwnedDocument Document { get; set; } = {{creation}}()
+                    {
+                        Nested = new NestedAlias { Enabled = true }
+                    };
+                    public OwnedDocument ExplicitDefault { get; set; } = new Sample.OwnedDocument
+                    {
+                        Nested = new Sample.NestedValue()
+                    };
+                    public string Label { get; set; } = new string('x', 2);
+                }
+
+                public class OwnedDocument
+                {
+                    public NestedValue Nested { get; set; }
+                }
+
+                public class NestedValue
+                {
+                    public bool Enabled { get; set; }
+                }
+
+                public class ApplicationContext : DbContext
+                {
+                    public DbSet<RootEntity> Entities { get; set; }
+                    protected override void OnModelCreating(ModelBuilder builder)
+                    {
+                        {{modelBody}}
+                    }
+                }
+                {{configuration}}
+            }
+            """;
+        var references = ((string)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")!)
+            .Split(Path.PathSeparator)
+            .Select(path => MetadataReference.CreateFromFile(path))
+            .Concat([MetadataReference.CreateFromFile(typeof(DbContext).Assembly.Location)]);
+        var compilation = CSharpCompilation.Create("OwnedInitializerRegression",
+            [CSharpSyntaxTree.ParseText(source)], references,
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+        Assert.Empty(compilation.GetDiagnostics().Where(d => d.Severity == DiagnosticSeverity.Error));
+
+        GeneratorDriver driver = CSharpGeneratorDriver.Create(
+            new ReadonlyDbContextGenerator.ReadOnlyDbContextGenerator().AsSourceGenerator());
+        driver = driver.RunGeneratorsAndUpdateCompilation(compilation, out var output, out var diagnostics);
+
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        Assert.Empty(output.GetDiagnostics().Where(d => d.Severity == DiagnosticSeverity.Error));
+        var generated = Assert.Single(driver.GetRunResult().Results.Single().GeneratedSources,
+            result => result.HintName == "ReadOnlyRootEntity.g.cs").SourceText.ToString();
+        Assert.Contains("new ReadOnlyNestedValue", generated);
+        Assert.Contains("new ReadOnlyOwnedDocument", generated);
+        var scalarInitializer = CSharpSyntaxTree.ParseText(generated).GetRoot().DescendantNodes()
+            .OfType<Microsoft.CodeAnalysis.CSharp.Syntax.PropertyDeclarationSyntax>()
+            .Single(property => property.Identifier.ValueText == "Label").Initializer;
+        Assert.True(SyntaxFactory.AreEquivalent(
+            SyntaxFactory.ParseExpression("new string('x', 2)"), scalarInitializer!.Value));
+    }
+
     [Fact]
     public async Task DoesNotGenerateOrCrashWhenNoDbContextIsPresent()
     {

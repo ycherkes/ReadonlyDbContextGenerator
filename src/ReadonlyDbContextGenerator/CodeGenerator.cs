@@ -18,7 +18,7 @@ public class CodeGenerator
     internal static void GenerateReadOnlyCode(SourceProductionContext context, AggregatedInfo info)
     {
         var commonNamespace = GetCommonRootNamespace(info);
-        var generatedTypeNames = CreateGeneratedTypeNames(info.Entities.Select(entity => entity.Type));
+        var generatedTypeNames = CreateGeneratedTypeNames(GetEntityTypes(info.Entities));
         foreach (var dbContext in info.DbContexts)
         {
             generatedTypeNames[dbContext.TypeSymbol] = GetReadonlyTypeName(dbContext.TypeSymbol.Name);
@@ -67,6 +67,35 @@ public class CodeGenerator
 
             var readOnlyInterfaceCode = GenerateReadOnlyDbContextInterface(readOnlyDbContextCode, dbContext, commonNamespace);
             context.AddSource($"I{readonlyDbContextFileName}.g.cs", readOnlyInterfaceCode);
+        }
+    }
+
+    private static IEnumerable<ITypeSymbol> GetEntityTypes(IReadOnlyList<EntityInfo> entities)
+    {
+        var discovered = new HashSet<ITypeSymbol>(SymbolEqualityComparer.Default);
+        var pending = new Queue<ITypeSymbol>(entities.Select(entity => entity.Type));
+        while (pending.Count > 0)
+        {
+            var type = pending.Dequeue().OriginalDefinition;
+            if (!discovered.Add(type))
+                continue;
+
+            yield return type;
+            foreach (var property in type.GetMembers().OfType<IPropertySymbol>())
+            {
+                var (target, _) = GetNavigationTargetType(property.Type);
+                if (target != null && IsEntityType(target, entities))
+                    pending.Enqueue(target);
+            }
+
+            if (type is INamedTypeSymbol namedType)
+            {
+                if (namedType.BaseType != null && SyntaxHelper.FindEntityClassOrInterface(namedType.BaseType) != null)
+                    pending.Enqueue(namedType.BaseType);
+                foreach (var interfaceType in namedType.Interfaces)
+                    if (SyntaxHelper.FindEntityClassOrInterface(interfaceType) != null)
+                        pending.Enqueue(interfaceType);
+            }
         }
     }
 
@@ -228,6 +257,11 @@ public class CodeGenerator
                 {
                     var declaredSymbol = sm.GetDeclaredSymbol(prop);
                     var propTypeSymbol = declaredSymbol?.Type ?? sm.GetTypeInfo(prop.Type).Type;
+                    if (prop.Initializer != null)
+                    {
+                        var rewriter = new TypeReferenceRewriter(generatedTypeNames, sm);
+                        prop = prop.WithInitializer((EqualsValueClauseSyntax)rewriter.Visit(prop.Initializer));
+                    }
 
                     // Handle navigation properties/entities (including collections and nullable refs)
                     var (navigationTargetSymbol, isCollection) = GetNavigationTargetType(propTypeSymbol);
