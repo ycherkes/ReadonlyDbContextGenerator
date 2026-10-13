@@ -4,6 +4,7 @@ All notable changes to this project will be documented in this file.
 
 ## v0.2.5
 - Rewrite entity type references in property initializers, including nested owned objects, aliases, and fully qualified types, so generated read-only properties are initialized with their read-only counterparts.
+- Preserve static method receivers in property initializers; only object-creation types are rewritten because methods are not copied to generated entities.
 
 ## v0.2.3
 - Fixed generated readonly `DbContext` classes calling the original (non-readonly) `IEntityTypeConfiguration<T>` classes instead of their generated readonly counterparts (e.g. `new FooEntityConfig()` instead of `new ReadOnlyFooEntityConfig()`). This caused readonly entities to be left without their EF Core relationship/index configuration, leading to `InvalidOperationException: Unable to determine the relationship...` at runtime whenever an entity configuration class was referenced by name inside `OnModelCreating` (directly or via a helper method).

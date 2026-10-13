@@ -40,6 +40,7 @@ public class ReadonlyDbContextGeneratorTests
         var source = /* lang=c#-test */ $$"""
             using Microsoft.EntityFrameworkCore;
             using NestedAlias = Sample.NestedValue;
+            using EntityAlias = Sample.RootEntity;
 
             namespace Sample
             {
@@ -55,6 +56,11 @@ public class ReadonlyDbContextGeneratorTests
                         Nested = new Sample.NestedValue()
                     };
                     public string Label { get; set; } = new string('x', 2);
+                    public string MethodLabel { get; set; } = RootEntity.CreateLabel();
+                    public string QualifiedLabel { get; set; } = Sample.RootEntity.CreateLabel();
+                    public string AliasedLabel { get; set; } = EntityAlias.CreateLabel<string>();
+                    public static string CreateLabel() => "label";
+                    public static string CreateLabel<T>() => typeof(T).Name;
                 }
 
                 public class OwnedDocument
@@ -102,6 +108,10 @@ public class ReadonlyDbContextGeneratorTests
             .Single(property => property.Identifier.ValueText == "Label").Initializer;
         Assert.True(SyntaxFactory.AreEquivalent(
             SyntaxFactory.ParseExpression("new string('x', 2)"), scalarInitializer!.Value));
+        Assert.Contains("RootEntity.CreateLabel()", generated);
+        Assert.Contains("Sample.RootEntity.CreateLabel()", generated);
+        Assert.Contains("EntityAlias.CreateLabel<string>()", generated);
+        Assert.DoesNotContain("ReadOnlyRootEntity.CreateLabel", generated);
     }
 
     [Fact]

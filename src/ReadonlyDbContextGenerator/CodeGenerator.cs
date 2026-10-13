@@ -259,7 +259,7 @@ public class CodeGenerator
                     var propTypeSymbol = declaredSymbol?.Type ?? sm.GetTypeInfo(prop.Type).Type;
                     if (prop.Initializer != null)
                     {
-                        var rewriter = new TypeReferenceRewriter(generatedTypeNames, sm);
+                        var rewriter = new PropertyInitializerRewriter(generatedTypeNames, sm);
                         prop = prop.WithInitializer((EqualsValueClauseSyntax)rewriter.Visit(prop.Initializer));
                     }
 
@@ -538,6 +538,17 @@ public class CodeGenerator
         }
 
         return null;
+    }
+
+    private sealed class PropertyInitializerRewriter(
+        IReadOnlyDictionary<ITypeSymbol, string> typeNames, SemanticModel model) : CSharpSyntaxRewriter
+    {
+        public override SyntaxNode VisitObjectCreationExpression(ObjectCreationExpressionSyntax node)
+        {
+            var rewrittenType = (TypeSyntax)new TypeReferenceRewriter(typeNames, model).Visit(node.Type);
+            var rewritten = (ObjectCreationExpressionSyntax)base.VisitObjectCreationExpression(node);
+            return rewritten.WithType(rewrittenType);
+        }
     }
 
     public class TypeReferenceRewriter(IReadOnlyDictionary<ITypeSymbol, string> typeNames, SemanticModel model) : CSharpSyntaxRewriter
