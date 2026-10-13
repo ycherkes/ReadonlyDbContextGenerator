@@ -11,6 +11,9 @@ All notable changes to this project will be documented in this file.
 - Rewrite local, foreach, and explicitly typed query declarations inside initializer lambdas.
 - Rewrite receivers for copied static properties while preserving receivers for removed methods.
 - Rewrite entity operands in `typeof` initializers while preserving scalar value types.
+- Preserve inherited static-property receivers when their declaring external base type is not generated.
+- Rewrite explicit lambda and anonymous-method parameters and local-function signature types.
+- Rewrite entity type operands in `nameof` while preserving scalar types and method receivers.
 - Rewrite entity array creation initializers, including aliased and fully qualified element types, while preserving dimension expressions.
 - Exclude value types from navigation discovery so struct and record-struct properties retain their original types and initializers.
 

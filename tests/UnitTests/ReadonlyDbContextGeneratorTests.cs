@@ -47,7 +47,7 @@ public class ReadonlyDbContextGeneratorTests
 
             namespace Sample
             {
-                public class RootEntity
+                public class RootEntity : ExternalBase
                 {
                     public int Id { get; set; }
                     public OwnedDocument Document { get; set; } = {{creation}}()
@@ -106,6 +106,21 @@ public class ReadonlyDbContextGeneratorTests
                     public System.Type NavigationType { get; set; } = typeof(NestedAlias);
                     public System.Type QualifiedNavigationType { get; set; } = typeof(Sample.NestedValue);
                     public System.Type ScalarType { get; set; } = typeof(ScalarValue);
+                    public string ExternalLabel { get; set; } = RootEntity.DefaultLabel;
+                    public string InheritedLabel { get; set; } = NestedValue.SourceLabel;
+                    public NestedValue LambdaChild { get; set; } =
+                        new System.Func<NestedValue, NestedValue>((NestedAlias value) => value)(new NestedValue());
+                    public NestedValue AnonymousChild { get; set; } =
+                        new System.Func<NestedValue, NestedValue>(delegate(Sample.NestedValue value) { return value; })(new NestedValue());
+                    public NestedValue LocalFunctionChild { get; set; } = new System.Func<NestedValue>(() =>
+                    {
+                        NestedAlias Make(Sample.NestedValue value) => value ?? new NestedValue();
+                        return Make(new NestedValue());
+                    })();
+                    public string EntityName { get; set; } = nameof(NestedAlias);
+                    public string QualifiedEntityName { get; set; } = nameof(Sample.NestedValue);
+                    public string ScalarName { get; set; } = nameof(ScalarValue);
+                    public string MethodName { get; set; } = nameof(RootEntity.GetObject);
                     public static T[] CreateArray<T>() => System.Array.Empty<T>();
                     public static object GetObject() => null;
                     public static int GetArrayLength() => 0;
@@ -118,7 +133,12 @@ public class ReadonlyDbContextGeneratorTests
                     public NestedValue Nested { get; set; }
                 }
 
-                public class NestedValue
+                public class SourceBase
+                {
+                    public static string SourceLabel { get; } = "source";
+                }
+
+                public class NestedValue : SourceBase
                 {
                     public bool Enabled { get; set; }
                     public static NestedValue Default { get; } = new NestedValue();
@@ -146,6 +166,17 @@ public class ReadonlyDbContextGeneratorTests
             .Split(Path.PathSeparator)
             .Select(path => MetadataReference.CreateFromFile(path))
             .Concat([MetadataReference.CreateFromFile(typeof(DbContext).Assembly.Location)]);
+        var externalCompilation = CSharpCompilation.Create("ExternalInitializerBase",
+            [CSharpSyntaxTree.ParseText(/* lang=c#-test */ """
+                public class ExternalBase
+                {
+                    public static string DefaultLabel { get; } = "external";
+                }
+                """)], references, new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+        using var externalAssembly = new MemoryStream();
+        var externalResult = externalCompilation.Emit(externalAssembly);
+        Assert.True(externalResult.Success, string.Join(Environment.NewLine, externalResult.Diagnostics));
+        references = references.Append(MetadataReference.CreateFromImage(externalAssembly.ToArray()));
         var compilation = CSharpCompilation.Create("OwnedInitializerRegression",
             [CSharpSyntaxTree.ParseText(source)], references,
             new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
@@ -207,6 +238,16 @@ public class ReadonlyDbContextGeneratorTests
         Assert.DoesNotContain("typeof(NestedAlias)", generated);
         Assert.DoesNotContain("typeof(Sample.NestedValue)", generated);
         Assert.Contains("typeof(ScalarValue)", generated);
+        Assert.Contains("= RootEntity.DefaultLabel", generated);
+        Assert.Contains("= ReadOnlyNestedValue.SourceLabel", generated);
+        Assert.Contains("(ReadOnlyNestedValue value) => value", generated);
+        Assert.Contains("delegate (ReadOnlyNestedValue value)", generated);
+        Assert.Contains("ReadOnlyNestedValue Make(ReadOnlyNestedValue value)", generated);
+        Assert.Contains("nameof(ReadOnlyNestedValue)", generated);
+        Assert.DoesNotContain("nameof(NestedAlias)", generated);
+        Assert.DoesNotContain("nameof(Sample.NestedValue)", generated);
+        Assert.Contains("nameof(ScalarValue)", generated);
+        Assert.Contains("nameof(RootEntity.GetObject)", generated);
         Assert.DoesNotContain(driver.GetRunResult().Results.Single().GeneratedSources,
             result => result.HintName.Contains("ReadOnlyScalar", StringComparison.Ordinal));
     }

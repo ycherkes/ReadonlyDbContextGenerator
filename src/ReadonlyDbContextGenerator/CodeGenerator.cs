@@ -551,7 +551,8 @@ public class CodeGenerator
         public override SyntaxNode VisitMemberAccessExpression(MemberAccessExpressionSyntax node)
         {
             var rewritten = (MemberAccessExpressionSyntax)base.VisitMemberAccessExpression(node);
-            if (model.GetSymbolInfo(node).Symbol is IPropertySymbol { IsStatic: true }
+            if (model.GetSymbolInfo(node).Symbol is IPropertySymbol { IsStatic: true } property
+                && typeNames.ContainsKey(property.ContainingType.OriginalDefinition)
                 && model.GetSymbolInfo(node.Expression).Symbol is ITypeSymbol receiverType
                 && typeNames.TryGetValue(receiverType.OriginalDefinition, out var readonlyName))
             {
@@ -560,6 +561,38 @@ public class CodeGenerator
             }
 
             return rewritten;
+        }
+
+        public override SyntaxNode VisitInvocationExpression(InvocationExpressionSyntax node)
+        {
+            var rewritten = (InvocationExpressionSyntax)base.VisitInvocationExpression(node);
+            if (model.GetOperation(node) is Microsoft.CodeAnalysis.Operations.INameOfOperation
+                && node.ArgumentList.Arguments.Count == 1
+                && model.GetSymbolInfo(node.ArgumentList.Arguments[0].Expression).Symbol is ITypeSymbol type
+                && typeNames.TryGetValue(type.OriginalDefinition, out var readonlyName))
+            {
+                var argument = rewritten.ArgumentList.Arguments[0];
+                return rewritten.WithArgumentList(rewritten.ArgumentList.WithArguments(
+                    SyntaxFactory.SingletonSeparatedList(argument.WithExpression(
+                        SyntaxFactory.IdentifierName(readonlyName).WithTriviaFrom(argument.Expression)))));
+            }
+
+            return rewritten;
+        }
+
+        public override SyntaxNode VisitParameter(ParameterSyntax node)
+        {
+            var rewritten = (ParameterSyntax)base.VisitParameter(node);
+            return node.Type == null
+                ? rewritten
+                : rewritten.WithType((TypeSyntax)new TypeReferenceRewriter(typeNames, model).Visit(node.Type));
+        }
+
+        public override SyntaxNode VisitLocalFunctionStatement(LocalFunctionStatementSyntax node)
+        {
+            var rewrittenReturnType = (TypeSyntax)new TypeReferenceRewriter(typeNames, model).Visit(node.ReturnType);
+            var rewritten = (LocalFunctionStatementSyntax)base.VisitLocalFunctionStatement(node);
+            return rewritten.WithReturnType(rewrittenReturnType);
         }
 
         public override SyntaxNode VisitTypeOfExpression(TypeOfExpressionSyntax node)
