@@ -40,6 +40,8 @@ public class ReadonlyDbContextGeneratorTests
         var source = /* lang=c#-test */ $$"""
             using Microsoft.EntityFrameworkCore;
             using System.Collections.Generic;
+            using System.Linq;
+            using static System.Array;
             using NestedAlias = Sample.NestedValue;
             using EntityAlias = Sample.RootEntity;
 
@@ -72,6 +74,12 @@ public class ReadonlyDbContextGeneratorTests
                     public NestedValue AsChild { get; set; } = RootEntity.GetObject() as NestedAlias;
                     public bool IsChild { get; set; } = RootEntity.GetObject() is NestedAlias;
                     public ScalarValue DefaultValue { get; set; } = default(ScalarValue);
+                    public ICollection<NestedValue> EmptyChildren { get; set; } = System.Array.Empty<NestedValue>();
+                    public IEnumerable<NestedValue> EnumerableChildren { get; set; } = Enumerable.Empty<Sample.NestedValue>().ToArray();
+                    public ICollection<NestedValue> UnqualifiedChildren { get; set; } = Empty<NestedAlias>();
+                    public ICollection<NestedValue> FactoryChildren { get; set; } = EntityAlias.CreateArray<NestedAlias>();
+                    public ScalarValue[] EmptyValues { get; set; } = System.Array.Empty<ScalarValue>();
+                    public static T[] CreateArray<T>() => System.Array.Empty<T>();
                     public static object GetObject() => null;
                     public static int GetArrayLength() => 0;
                     public static string CreateLabel() => "label";
@@ -148,6 +156,12 @@ public class ReadonlyDbContextGeneratorTests
         Assert.Contains("RootEntity.GetObject() is ReadOnlyNestedValue", generated);
         Assert.Contains("default(ScalarValue)", generated);
         Assert.DoesNotContain("ReadOnlyRootEntity.GetObject", generated);
+        Assert.Contains("System.Array.Empty<ReadOnlyNestedValue>()", generated);
+        Assert.Contains("Enumerable.Empty<ReadOnlyNestedValue>().ToArray()", generated);
+        Assert.Contains("= Empty<ReadOnlyNestedValue>()", generated);
+        Assert.Contains("EntityAlias.CreateArray<ReadOnlyNestedValue>()", generated);
+        Assert.Contains("System.Array.Empty<ScalarValue>()", generated);
+        Assert.DoesNotContain("ReadOnlyRootEntity.CreateArray", generated);
         Assert.DoesNotContain(driver.GetRunResult().Results.Single().GeneratedSources,
             result => result.HintName.Contains("ReadOnlyScalar", StringComparison.Ordinal));
     }

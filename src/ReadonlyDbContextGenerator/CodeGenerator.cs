@@ -543,6 +543,11 @@ public class CodeGenerator
     private sealed class PropertyInitializerRewriter(
         IReadOnlyDictionary<ITypeSymbol, string> typeNames, SemanticModel model) : CSharpSyntaxRewriter
     {
+        public override SyntaxNode VisitTypeArgumentList(TypeArgumentListSyntax node)
+        {
+            return new TypeReferenceRewriter(typeNames, model).Visit(node);
+        }
+
         public override SyntaxNode VisitObjectCreationExpression(ObjectCreationExpressionSyntax node)
         {
             var rewrittenType = (TypeSyntax)new TypeReferenceRewriter(typeNames, model).Visit(node.Type);
