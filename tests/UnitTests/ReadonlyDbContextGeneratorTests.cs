@@ -67,6 +67,12 @@ public class ReadonlyDbContextGeneratorTests
                     public ICollection<NestedValue> QualifiedChildren { get; set; } = new Sample.NestedValue[RootEntity.GetArrayLength()];
                     public ICollection<NestedValue> AliasedChildren { get; set; } = new NestedAlias[] { new NestedAlias { Enabled = true } };
                     public int[] Numbers { get; set; } = new int[RootEntity.GetArrayLength()];
+                    public NestedValue DefaultChild { get; set; } = default(NestedValue);
+                    public NestedValue CastChild { get; set; } = (Sample.NestedValue)RootEntity.GetObject();
+                    public NestedValue AsChild { get; set; } = RootEntity.GetObject() as NestedAlias;
+                    public bool IsChild { get; set; } = RootEntity.GetObject() is NestedAlias;
+                    public ScalarValue DefaultValue { get; set; } = default(ScalarValue);
+                    public static object GetObject() => null;
                     public static int GetArrayLength() => 0;
                     public static string CreateLabel() => "label";
                     public static string CreateLabel<T>() => typeof(T).Name;
@@ -136,6 +142,12 @@ public class ReadonlyDbContextGeneratorTests
         Assert.Contains("new ReadOnlyNestedValue[]", generated);
         Assert.Contains("new int[RootEntity.GetArrayLength()]", generated);
         Assert.DoesNotContain("ReadOnlyRootEntity.GetArrayLength", generated);
+        Assert.Contains("default(ReadOnlyNestedValue)", generated);
+        Assert.Contains("(ReadOnlyNestedValue)RootEntity.GetObject()", generated);
+        Assert.Contains("RootEntity.GetObject() as ReadOnlyNestedValue", generated);
+        Assert.Contains("RootEntity.GetObject() is ReadOnlyNestedValue", generated);
+        Assert.Contains("default(ScalarValue)", generated);
+        Assert.DoesNotContain("ReadOnlyRootEntity.GetObject", generated);
         Assert.DoesNotContain(driver.GetRunResult().Results.Single().GeneratedSources,
             result => result.HintName.Contains("ReadOnlyScalar", StringComparison.Ordinal));
     }

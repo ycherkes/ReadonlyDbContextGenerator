@@ -556,6 +556,29 @@ public class CodeGenerator
             var rewritten = (ArrayCreationExpressionSyntax)base.VisitArrayCreationExpression(node);
             return rewritten.WithType(rewritten.Type.WithElementType(rewrittenElementType));
         }
+
+        public override SyntaxNode VisitDefaultExpression(DefaultExpressionSyntax node)
+        {
+            return node.WithType((TypeSyntax)new TypeReferenceRewriter(typeNames, model).Visit(node.Type));
+        }
+
+        public override SyntaxNode VisitCastExpression(CastExpressionSyntax node)
+        {
+            var rewrittenType = (TypeSyntax)new TypeReferenceRewriter(typeNames, model).Visit(node.Type);
+            var rewritten = (CastExpressionSyntax)base.VisitCastExpression(node);
+            return rewritten.WithType(rewrittenType);
+        }
+
+        public override SyntaxNode VisitBinaryExpression(BinaryExpressionSyntax node)
+        {
+            var rewritten = (BinaryExpressionSyntax)base.VisitBinaryExpression(node);
+            if (node.IsKind(SyntaxKind.AsExpression) || node.IsKind(SyntaxKind.IsExpression))
+            {
+                return rewritten.WithRight((TypeSyntax)new TypeReferenceRewriter(typeNames, model).Visit(node.Right));
+            }
+
+            return rewritten;
+        }
     }
 
     public class TypeReferenceRewriter(IReadOnlyDictionary<ITypeSymbol, string> typeNames, SemanticModel model) : CSharpSyntaxRewriter
