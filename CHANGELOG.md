@@ -7,6 +7,7 @@ All notable changes to this project will be documented in this file.
 - Preserve static method receivers in property initializers while rewriting explicit type operands because methods are not copied to generated entities.
 - Rewrite entity types in `default`, casts, and `as`/`is` type expressions within property initializers.
 - Rewrite entity type arguments in generic initializer calls without changing method names or static receivers.
+- Rewrite entity types in declaration, type, and recursive patterns within conditional and switch initializers.
 - Rewrite entity array creation initializers, including aliased and fully qualified element types, while preserving dimension expressions.
 - Exclude value types from navigation discovery so struct and record-struct properties retain their original types and initializers.
 

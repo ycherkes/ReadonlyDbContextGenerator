@@ -567,6 +567,33 @@ public class CodeGenerator
             return node.WithType((TypeSyntax)new TypeReferenceRewriter(typeNames, model).Visit(node.Type));
         }
 
+        public override SyntaxNode VisitDeclarationPattern(DeclarationPatternSyntax node)
+        {
+            var rewrittenType = (TypeSyntax)new TypeReferenceRewriter(typeNames, model).Visit(node.Type);
+            var rewritten = (DeclarationPatternSyntax)base.VisitDeclarationPattern(node);
+            return rewritten.WithType(rewrittenType);
+        }
+
+        public override SyntaxNode VisitTypePattern(TypePatternSyntax node)
+        {
+            return node.WithType((TypeSyntax)new TypeReferenceRewriter(typeNames, model).Visit(node.Type));
+        }
+
+        public override SyntaxNode VisitConstantPattern(ConstantPatternSyntax node)
+        {
+            return model.GetSymbolInfo(node.Expression).Symbol is ITypeSymbol
+                ? node.WithExpression((ExpressionSyntax)new TypeReferenceRewriter(typeNames, model).Visit(node.Expression))
+                : base.VisitConstantPattern(node);
+        }
+
+        public override SyntaxNode VisitRecursivePattern(RecursivePatternSyntax node)
+        {
+            var rewritten = (RecursivePatternSyntax)base.VisitRecursivePattern(node);
+            return node.Type == null
+                ? rewritten
+                : rewritten.WithType((TypeSyntax)new TypeReferenceRewriter(typeNames, model).Visit(node.Type));
+        }
+
         public override SyntaxNode VisitCastExpression(CastExpressionSyntax node)
         {
             var rewrittenType = (TypeSyntax)new TypeReferenceRewriter(typeNames, model).Visit(node.Type);

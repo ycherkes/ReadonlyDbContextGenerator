@@ -79,6 +79,15 @@ public class ReadonlyDbContextGeneratorTests
                     public ICollection<NestedValue> UnqualifiedChildren { get; set; } = Empty<NestedAlias>();
                     public ICollection<NestedValue> FactoryChildren { get; set; } = EntityAlias.CreateArray<NestedAlias>();
                     public ScalarValue[] EmptyValues { get; set; } = System.Array.Empty<ScalarValue>();
+                    public NestedValue PatternChild { get; set; } = RootEntity.GetObject() is NestedValue value ? value : new NestedValue();
+                    public NestedValue SwitchChild { get; set; } = RootEntity.GetObject() switch
+                    {
+                        Sample.NestedValue value => value,
+                        _ => new NestedValue()
+                    };
+                    public NestedValue RecursiveChild { get; set; } = RootEntity.GetObject() is NestedAlias { Enabled: true } value ? value : new NestedValue();
+                    public bool TypePattern { get; set; } = RootEntity.GetObject() switch { NestedAlias => true, _ => false };
+                    public bool ScalarPattern { get; set; } = RootEntity.GetObject() is ScalarValue value && value.Number == 0;
                     public static T[] CreateArray<T>() => System.Array.Empty<T>();
                     public static object GetObject() => null;
                     public static int GetArrayLength() => 0;
@@ -162,6 +171,11 @@ public class ReadonlyDbContextGeneratorTests
         Assert.Contains("EntityAlias.CreateArray<ReadOnlyNestedValue>()", generated);
         Assert.Contains("System.Array.Empty<ScalarValue>()", generated);
         Assert.DoesNotContain("ReadOnlyRootEntity.CreateArray", generated);
+        Assert.Contains("is ReadOnlyNestedValue value ? value : new ReadOnlyNestedValue()", generated);
+        Assert.Contains("ReadOnlyNestedValue value => value", generated);
+        Assert.Contains("is ReadOnlyNestedValue { Enabled: true } value", generated);
+        Assert.Contains("ReadOnlyNestedValue => true", generated);
+        Assert.Contains("is ScalarValue value", generated);
         Assert.DoesNotContain(driver.GetRunResult().Results.Single().GeneratedSources,
             result => result.HintName.Contains("ReadOnlyScalar", StringComparison.Ordinal));
     }
