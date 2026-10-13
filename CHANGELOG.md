@@ -8,6 +8,9 @@ All notable changes to this project will be documented in this file.
 - Rewrite entity types in `default`, casts, and `as`/`is` type expressions within property initializers.
 - Rewrite entity type arguments in generic initializer calls without changing method names or static receivers.
 - Rewrite entity types in declaration, type, and recursive patterns within conditional and switch initializers.
+- Rewrite local, foreach, and explicitly typed query declarations inside initializer lambdas.
+- Rewrite receivers for copied static properties while preserving receivers for removed methods.
+- Rewrite entity operands in `typeof` initializers while preserving scalar value types.
 - Rewrite entity array creation initializers, including aliased and fully qualified element types, while preserving dimension expressions.
 - Exclude value types from navigation discovery so struct and record-struct properties retain their original types and initializers.
 

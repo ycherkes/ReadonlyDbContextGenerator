@@ -548,6 +548,55 @@ public class CodeGenerator
             return new TypeReferenceRewriter(typeNames, model).Visit(node);
         }
 
+        public override SyntaxNode VisitMemberAccessExpression(MemberAccessExpressionSyntax node)
+        {
+            var rewritten = (MemberAccessExpressionSyntax)base.VisitMemberAccessExpression(node);
+            if (model.GetSymbolInfo(node).Symbol is IPropertySymbol { IsStatic: true }
+                && model.GetSymbolInfo(node.Expression).Symbol is ITypeSymbol receiverType
+                && typeNames.TryGetValue(receiverType.OriginalDefinition, out var readonlyName))
+            {
+                return rewritten.WithExpression(
+                    SyntaxFactory.IdentifierName(readonlyName).WithTriviaFrom(node.Expression));
+            }
+
+            return rewritten;
+        }
+
+        public override SyntaxNode VisitTypeOfExpression(TypeOfExpressionSyntax node)
+        {
+            return node.WithType((TypeSyntax)new TypeReferenceRewriter(typeNames, model).Visit(node.Type));
+        }
+
+        public override SyntaxNode VisitVariableDeclaration(VariableDeclarationSyntax node)
+        {
+            var rewrittenType = (TypeSyntax)new TypeReferenceRewriter(typeNames, model).Visit(node.Type);
+            var rewritten = (VariableDeclarationSyntax)base.VisitVariableDeclaration(node);
+            return rewritten.WithType(rewrittenType);
+        }
+
+        public override SyntaxNode VisitForEachStatement(ForEachStatementSyntax node)
+        {
+            var rewrittenType = (TypeSyntax)new TypeReferenceRewriter(typeNames, model).Visit(node.Type);
+            var rewritten = (ForEachStatementSyntax)base.VisitForEachStatement(node);
+            return rewritten.WithType(rewrittenType);
+        }
+
+        public override SyntaxNode VisitFromClause(FromClauseSyntax node)
+        {
+            var rewritten = (FromClauseSyntax)base.VisitFromClause(node);
+            return node.Type == null
+                ? rewritten
+                : rewritten.WithType((TypeSyntax)new TypeReferenceRewriter(typeNames, model).Visit(node.Type));
+        }
+
+        public override SyntaxNode VisitJoinClause(JoinClauseSyntax node)
+        {
+            var rewritten = (JoinClauseSyntax)base.VisitJoinClause(node);
+            return node.Type == null
+                ? rewritten
+                : rewritten.WithType((TypeSyntax)new TypeReferenceRewriter(typeNames, model).Visit(node.Type));
+        }
+
         public override SyntaxNode VisitObjectCreationExpression(ObjectCreationExpressionSyntax node)
         {
             var rewrittenType = (TypeSyntax)new TypeReferenceRewriter(typeNames, model).Visit(node.Type);

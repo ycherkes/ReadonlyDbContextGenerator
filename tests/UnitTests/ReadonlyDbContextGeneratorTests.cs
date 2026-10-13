@@ -88,6 +88,24 @@ public class ReadonlyDbContextGeneratorTests
                     public NestedValue RecursiveChild { get; set; } = RootEntity.GetObject() is NestedAlias { Enabled: true } value ? value : new NestedValue();
                     public bool TypePattern { get; set; } = RootEntity.GetObject() switch { NestedAlias => true, _ => false };
                     public bool ScalarPattern { get; set; } = RootEntity.GetObject() is ScalarValue value && value.Number == 0;
+                    public System.Func<object> LocalFactory { get; set; } = () =>
+                    {
+                        Sample.NestedValue value = new NestedAlias();
+                        foreach (NestedAlias child in new NestedValue[] { value })
+                            return child;
+                        return value;
+                    };
+                    public System.Func<object> QueryFactory { get; set; } = () =>
+                        (from NestedAlias child in new NestedValue[] { new NestedValue() }
+                         join Sample.NestedValue other in new NestedValue[] { new NestedValue() }
+                             on child.Enabled equals other.Enabled
+                         select child).ToArray();
+                    public NestedValue StaticChild { get; set; } = NestedValue.Default;
+                    public NestedValue QualifiedStaticChild { get; set; } = Sample.NestedValue.Default;
+                    public NestedValue AliasedStaticChild { get; set; } = NestedAlias.Default;
+                    public System.Type NavigationType { get; set; } = typeof(NestedAlias);
+                    public System.Type QualifiedNavigationType { get; set; } = typeof(Sample.NestedValue);
+                    public System.Type ScalarType { get; set; } = typeof(ScalarValue);
                     public static T[] CreateArray<T>() => System.Array.Empty<T>();
                     public static object GetObject() => null;
                     public static int GetArrayLength() => 0;
@@ -103,6 +121,7 @@ public class ReadonlyDbContextGeneratorTests
                 public class NestedValue
                 {
                     public bool Enabled { get; set; }
+                    public static NestedValue Default { get; } = new NestedValue();
                 }
 
                 public struct ScalarValue
@@ -176,6 +195,18 @@ public class ReadonlyDbContextGeneratorTests
         Assert.Contains("is ReadOnlyNestedValue { Enabled: true } value", generated);
         Assert.Contains("ReadOnlyNestedValue => true", generated);
         Assert.Contains("is ScalarValue value", generated);
+        Assert.Contains("ReadOnlyNestedValue value = new ReadOnlyNestedValue()", generated);
+        Assert.Contains("foreach (ReadOnlyNestedValue child in", generated);
+        Assert.Contains("from ReadOnlyNestedValue child in", generated);
+        Assert.Contains("join ReadOnlyNestedValue other in", generated);
+        Assert.Contains("= ReadOnlyNestedValue.Default", generated);
+        Assert.DoesNotContain("= NestedValue.Default", generated);
+        Assert.DoesNotContain("= Sample.NestedValue.Default", generated);
+        Assert.DoesNotContain("= NestedAlias.Default", generated);
+        Assert.Contains("typeof(ReadOnlyNestedValue)", generated);
+        Assert.DoesNotContain("typeof(NestedAlias)", generated);
+        Assert.DoesNotContain("typeof(Sample.NestedValue)", generated);
+        Assert.Contains("typeof(ScalarValue)", generated);
         Assert.DoesNotContain(driver.GetRunResult().Results.Single().GeneratedSources,
             result => result.HintName.Contains("ReadOnlyScalar", StringComparison.Ordinal));
     }
