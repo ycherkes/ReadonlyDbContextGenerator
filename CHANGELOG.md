@@ -14,6 +14,7 @@ All notable changes to this project will be documented in this file.
 - Preserve inherited static-property receivers when their declaring external base type is not generated.
 - Rewrite explicit lambda and anonymous-method parameters and local-function signature types.
 - Rewrite entity type operands in `nameof` while preserving scalar types and method receivers.
+- Rewrite qualifiers for copied nested enum values, explicit lambda return types, out/deconstruction declaration types, and local-function type constraints.
 - Rewrite entity array creation initializers, including aliased and fully qualified element types, while preserving dimension expressions.
 - Exclude value types from navigation discovery so struct and record-struct properties retain their original types and initializers.
 

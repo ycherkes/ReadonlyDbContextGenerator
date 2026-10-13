@@ -121,6 +121,24 @@ public class ReadonlyDbContextGeneratorTests
                     public string QualifiedEntityName { get; set; } = nameof(Sample.NestedValue);
                     public string ScalarName { get; set; } = nameof(ScalarValue);
                     public string MethodName { get; set; } = nameof(RootEntity.GetObject);
+                    public enum State { Active }
+                    public State Status { get; set; } = RootEntity.State.Active;
+                    public State QualifiedStatus { get; set; } = Sample.RootEntity.State.Active;
+                    public State AliasedStatus { get; set; } = EntityAlias.State.Active;
+                    public NestedValue TypedLambdaChild { get; set; } =
+                        new System.Func<NestedValue>(Sample.NestedValue () => new NestedAlias())();
+                    public NestedValue OutChild { get; set; } = new System.Func<NestedValue>(() =>
+                    {
+                        bool Try(out NestedValue value) { value = new NestedValue(); return true; }
+                        Try(out NestedAlias result);
+                        (NestedValue first, NestedAlias second) = (result, new NestedValue());
+                        return first;
+                    })();
+                    public NestedValue ConstrainedChild { get; set; } = new System.Func<NestedValue>(() =>
+                    {
+                        T Make<T>() where T : NestedAlias, new() => new T();
+                        return Make<NestedValue>();
+                    })();
                     public static T[] CreateArray<T>() => System.Array.Empty<T>();
                     public static object GetObject() => null;
                     public static int GetArrayLength() => 0;
@@ -248,6 +266,17 @@ public class ReadonlyDbContextGeneratorTests
         Assert.DoesNotContain("nameof(Sample.NestedValue)", generated);
         Assert.Contains("nameof(ScalarValue)", generated);
         Assert.Contains("nameof(RootEntity.GetObject)", generated);
+        Assert.Contains("= ReadOnlyRootEntity.State.Active", generated);
+        Assert.DoesNotContain("= RootEntity.State.Active", generated);
+        Assert.DoesNotContain("= Sample.RootEntity.State.Active", generated);
+        Assert.DoesNotContain("= EntityAlias.State.Active", generated);
+        var typedLambda = Assert.Single(CSharpSyntaxTree.ParseText(generated).GetRoot().DescendantNodes()
+            .OfType<Microsoft.CodeAnalysis.CSharp.Syntax.ParenthesizedLambdaExpressionSyntax>(),
+            lambda => lambda.ReturnType != null);
+        Assert.Equal("ReadOnlyNestedValue", typedLambda.ReturnType!.ToString());
+        Assert.Contains("out ReadOnlyNestedValue result", generated);
+        Assert.Contains("(ReadOnlyNestedValue first, ReadOnlyNestedValue second)", generated);
+        Assert.Contains("where T : ReadOnlyNestedValue, new()", generated);
         Assert.DoesNotContain(driver.GetRunResult().Results.Single().GeneratedSources,
             result => result.HintName.Contains("ReadOnlyScalar", StringComparison.Ordinal));
     }
