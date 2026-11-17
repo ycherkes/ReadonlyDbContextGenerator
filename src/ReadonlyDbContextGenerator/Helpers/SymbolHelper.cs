@@ -4,7 +4,7 @@ using System.Linq;
 
 namespace ReadonlyDbContextGenerator.Helpers;
 
-public class SymbolHelper
+internal static class SymbolHelper
 {
     public static bool IsNavigationProperty(IPropertySymbol prop)
     {

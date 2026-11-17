@@ -11,9 +11,10 @@ using ReadonlyDbContextGenerator.Diagnostics;
 
 namespace ReadonlyDbContextGenerator;
 
-public class CodeGenerator
+internal static class CodeGenerator
 {
-    private static MemberDeclarationSyntax[] _readonlyDbContextMethods;
+    // Syntax nodes are immutable, so the parsed save-guard members can be shared safely across runs.
+    private static readonly MemberDeclarationSyntax[] ReadonlyDbContextMethods = CreateReadonlyDbContextMethods();
 
     internal static void GenerateReadOnlyCode(SourceProductionContext context, AggregatedInfo info)
     {
@@ -61,13 +62,35 @@ public class CodeGenerator
 
         foreach (var dbContext in info.DbContexts)
         {
-            var readonlyDbContextFileName = GetReadonlyTypeName(dbContext.TypeSymbol, generatedTypeNames);
-            var readOnlyDbContextCode = ModifyDbContextSyntax(dbContext, dbContext.SyntaxNode!, info.Compilation, commonNamespace, generatedTypeNames);
-            context.AddSource($"{readonlyDbContextFileName}.g.cs", readOnlyDbContextCode.NormalizeWhitespace(eol: Environment.NewLine).ToFullString());
+            var readonlyDbContextName = GetReadonlyTypeName(dbContext.TypeSymbol, generatedTypeNames);
+            var queryableSets = GetQueryableSets(dbContext, generatedTypeNames);
 
-            var readOnlyInterfaceCode = GenerateReadOnlyDbContextInterface(readOnlyDbContextCode, dbContext, commonNamespace);
-            context.AddSource($"I{readonlyDbContextFileName}.g.cs", readOnlyInterfaceCode);
+            var readOnlyDbContextCode = ModifyDbContextSyntax(dbContext, dbContext.SyntaxNode!, info.Compilation, commonNamespace, generatedTypeNames, queryableSets);
+            context.AddSource($"{readonlyDbContextName}.g.cs", readOnlyDbContextCode.NormalizeWhitespace(eol: Environment.NewLine).ToFullString());
+
+            var readOnlyInterfaceCode = GenerateReadOnlyDbContextInterface(readonlyDbContextName, dbContext, commonNamespace, queryableSets);
+            context.AddSource($"I{readonlyDbContextName}.g.cs", readOnlyInterfaceCode);
         }
+    }
+
+    /// <summary>
+    /// The single source of truth for the queryable members exposed by the generated interface.
+    /// Both the interface declaration and its explicit implementation are built from this list,
+    /// so they cannot drift apart regardless of how the original DbSet property was written
+    /// (nullable, fully qualified, expression-bodied, with an initializer, ...).
+    /// </summary>
+    private static IReadOnlyList<QueryableSet> GetQueryableSets(DbContextInfo dbContext, IReadOnlyDictionary<ITypeSymbol, string> generatedTypeNames)
+    {
+        return dbContext.Entities
+            .Where(entity => !string.IsNullOrEmpty(entity.DbSetProperty))
+            .Select(entity => new QueryableSet(entity.DbSetProperty, GetReadonlyTypeName(entity.Type, generatedTypeNames)))
+            .ToList();
+    }
+
+    private readonly struct QueryableSet(string propertyName, string elementTypeName)
+    {
+        public string PropertyName { get; } = propertyName;
+        public string ElementTypeName { get; } = elementTypeName;
     }
 
     private static Dictionary<ITypeSymbol, string> CreateGeneratedTypeNames(IEnumerable<ITypeSymbol> types)
@@ -110,7 +133,11 @@ public class CodeGenerator
 
     private static string GetCommonRootNamespace(AggregatedInfo info)
     {
-        var allNamespaces = info.DbContexts.Select(x => x.Namespace?.ToString()).Distinct().ToList();
+        // The global namespace's ToString() is "<global namespace>", which is not a valid identifier.
+        var allNamespaces = info.DbContexts
+            .Select(x => x.Namespace is { IsGlobalNamespace: false } ns ? ns.ToDisplayString() : null)
+            .Distinct()
+            .ToList();
 
         allNamespaces.AddRange(info.Entities.Select(e => GetNamespace(e.SyntaxNode)?.Name.ToString()));
         allNamespaces.AddRange(info.Configurations.Select(c => GetNamespace(c.SyntaxNode)?.Name.ToString()));
@@ -506,7 +533,7 @@ public class CodeGenerator
         return null;
     }
 
-    public class TypeReferenceRewriter(IReadOnlyDictionary<ITypeSymbol, string> typeNames, SemanticModel model) : CSharpSyntaxRewriter
+    private sealed class TypeReferenceRewriter(IReadOnlyDictionary<ITypeSymbol, string> typeNames, SemanticModel model) : CSharpSyntaxRewriter
     {
         public override SyntaxNode VisitIdentifierName(IdentifierNameSyntax node)
         {
@@ -633,7 +660,8 @@ public class CodeGenerator
 
     private static CompilationUnitSyntax ModifyDbContextSyntax(DbContextInfo dbContext,
         ClassDeclarationSyntax dbContextSyntax, Compilation compilation, string commonNamespace,
-        IReadOnlyDictionary<ITypeSymbol, string> types)
+        IReadOnlyDictionary<ITypeSymbol, string> types,
+        IReadOnlyList<QueryableSet> queryableSets)
     {
         // Add the IReadOnlyDbContext interface to the BaseList
         var baseList = dbContextSyntax.BaseList ?? SyntaxFactory.BaseList();
@@ -653,33 +681,15 @@ public class CodeGenerator
             .Where(member => member is not MethodDeclarationSyntax { Identifier.Text: "SaveChanges" or "SaveChangesAsync" })
             .Where(member => member is not PropertyDeclarationSyntax prop || !externalDbSetNames.Contains(prop.Identifier.Text));
 
-        var newMethods = GetReadonlyDbContextMethods();
+        var newMethods = ReadonlyDbContextMethods;
 
         var allMembers = withoutSaveMethods.Concat(newMethods).ToList();
 
         var newIdentifier = SyntaxFactory.Identifier(readonlyDbContextIdentifier);
 
-        var interfaceMembers = newDbContextSyntax.Members
-            .OfType<PropertyDeclarationSyntax>()
-            .Where(prop => dbContext.Entities.Any(e => e.DbSetProperty == prop.Identifier.Text))
-            .Select(property =>
-            {
-                var queryableType = SyntaxFactory.GenericName(SyntaxFactory.Identifier("IQueryable"))
-                    .WithTypeArgumentList(((GenericNameSyntax)property.Type).TypeArgumentList);
-
-                var explicitInterfaceSpecifier = SyntaxFactory.ExplicitInterfaceSpecifier(
-                    SyntaxFactory.IdentifierName(readonlyDbContextInterfaceName)
-                );
-
-                return property
-                    .WithType(queryableType)
-                    .WithExplicitInterfaceSpecifier(explicitInterfaceSpecifier)
-                    .WithAccessorList(null)
-                    .WithModifiers(SyntaxFactory.TokenList())
-                    .WithExpressionBody(SyntaxFactory.ArrowExpressionClause(SyntaxFactory.IdentifierName(property.Identifier)))
-                    .WithSemicolonToken(SyntaxFactory.Token(SyntaxKind.SemicolonToken));
-            })
-            .Cast<MemberDeclarationSyntax>()
+        var interfaceMembers = queryableSets
+            .Select(set => SyntaxFactory.ParseMemberDeclaration(
+                $"IQueryable<{set.ElementTypeName}> {readonlyDbContextInterfaceName}.{set.PropertyName} => {set.PropertyName};")!)
             .ToList();
 
         var setMethodText = $"IQueryable<TEntity> {readonlyDbContextInterfaceName}.Set<TEntity>() where TEntity : class => Set<TEntity>();";
@@ -720,14 +730,8 @@ public class CodeGenerator
         return classDeclaration;
     }
 
-    public static IEnumerable<MemberDeclarationSyntax> GetReadonlyDbContextMethods()
+    private static MemberDeclarationSyntax[] CreateReadonlyDbContextMethods()
     {
-        if (_readonlyDbContextMethods != null)
-        {
-            return _readonlyDbContextMethods;
-        }
-
-        // Define the methods
         var methods = new[]
         {
             """
@@ -756,38 +760,16 @@ public class CodeGenerator
             """
         };
 
-        return _readonlyDbContextMethods = methods.Select(m => SyntaxFactory.ParseMemberDeclaration(m)?.NormalizeWhitespace()).ToArray();
+        return methods.Select(m => SyntaxFactory.ParseMemberDeclaration(m)!.NormalizeWhitespace()).ToArray();
     }
 
-    private static string GenerateReadOnlyDbContextInterface(CompilationUnitSyntax dbContextInfo,
-        DbContextInfo dbContext, string commonNamespace)
+    private static string GenerateReadOnlyDbContextInterface(string readonlyDbContextName,
+        DbContextInfo dbContext, string commonNamespace, IReadOnlyList<QueryableSet> queryableSets)
     {
-        var classDeclaration = dbContextInfo.DescendantNodes().OfType<ClassDeclarationSyntax>().First();
+        var interfaceName = $"I{readonlyDbContextName}";
 
-        var interfaceName = $"I{classDeclaration.Identifier.Text}";
-
-        var interfaceMembers = classDeclaration.Members
-            .OfType<PropertyDeclarationSyntax>()
-            .Where(prop => dbContext.Entities.Any(e => e.DbSetProperty == prop.Identifier.Text && prop.Type is GenericNameSyntax { Identifier.Text: "DbSet" }))
-            .Select(property =>
-            {
-                // Create a read-only version of the property
-                var getAccessor = SyntaxFactory.AccessorDeclaration(SyntaxKind.GetAccessorDeclaration)
-                    .WithSemicolonToken(SyntaxFactory.Token(SyntaxKind.SemicolonToken));
-                var accessorList = SyntaxFactory.AccessorList(SyntaxFactory.SingletonList(getAccessor));
-
-                var queryableType = SyntaxFactory.GenericName(
-                        SyntaxFactory.Identifier("IQueryable"))
-                    .WithTypeArgumentList(((GenericNameSyntax)property.Type).TypeArgumentList);
-
-                return property
-                    .WithType(queryableType)
-                    .WithAccessorList(accessorList)
-                    .WithInitializer(null)
-                    .WithSemicolonToken(default)
-                    .WithModifiers(SyntaxFactory.TokenList()); // Remove modifiers like `public`
-            })
-            .Cast<MemberDeclarationSyntax>()
+        var interfaceMembers = queryableSets
+            .Select(set => SyntaxFactory.ParseMemberDeclaration($"IQueryable<{set.ElementTypeName}> {set.PropertyName} {{ get; }}")!)
             .ToList();
 
         const string setMethodText = "IQueryable<TEntity> Set<TEntity>() where TEntity : class;";

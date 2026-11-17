@@ -26,7 +26,7 @@ public class ReadonlyDbContextGeneratorTests
     [Fact]
     public void GeneratesForAContextThatIndirectlyInheritsDbContext()
     {
-        var source = CSharpSyntaxTree.ParseText("""
+        var source = """
             using Microsoft.EntityFrameworkCore;
 
             public class Entity { public int Id { get; set; } }
@@ -35,30 +35,21 @@ public class ReadonlyDbContextGeneratorTests
             {
                 public DbSet<Entity> Entities { get; set; } = null!;
             }
-            """);
+            """;
 
-        var compilation = CSharpCompilation.Create(
-            assemblyName: "GeneratorRegression",
-            syntaxTrees: [source],
-            references:
-            [
-                MetadataReference.CreateFromFile(typeof(object).Assembly.Location),
-                MetadataReference.CreateFromFile(typeof(DbContext).Assembly.Location)
-            ],
-            options: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+        var runResult = GeneratorHarness.RunAndAssertCompiles(source, "GeneratorRegression");
 
-        GeneratorDriver driver = CSharpGeneratorDriver.Create(
-            new ReadonlyDbContextGenerator.ReadOnlyDbContextGenerator().AsSourceGenerator());
-        driver = driver.RunGenerators(compilation);
+        var generatedSources = runResult.GeneratedSources;
+        var context = Assert.Single(generatedSources, sourceResult => sourceResult.HintName == "ReadOnlyApplicationContext.g.cs");
 
-        var generatedSources = driver.GetRunResult().Results.Single().GeneratedSources;
-        Assert.Contains(generatedSources, sourceResult => sourceResult.HintName == "ReadOnlyApplicationContext.g.cs");
+        // Types in the global namespace must not leak "<global namespace>" into the generated namespace.
+        Assert.Contains("namespace Generated", context.SourceText.ToString());
     }
 
     [Fact]
     public void GeneratesDistinctTypesForEntitiesWithTheSameShortNameAndMergesPartialDeclarations()
     {
-        var source = CSharpSyntaxTree.ParseText("""
+        var source = """
             using Microsoft.EntityFrameworkCore;
 
             namespace Sales
@@ -80,23 +71,11 @@ public class ReadonlyDbContextGeneratorTests
                     public DbSet<Support.Customer> SupportCustomers { get; set; } = null!;
                 }
             }
-            """);
+            """;
 
-        var compilation = CSharpCompilation.Create(
-            assemblyName: "GeneratorRegression",
-            syntaxTrees: [source],
-            references:
-            [
-                MetadataReference.CreateFromFile(typeof(object).Assembly.Location),
-                MetadataReference.CreateFromFile(typeof(DbContext).Assembly.Location)
-            ],
-            options: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+        var runResult = GeneratorHarness.RunAndAssertCompiles(source, "GeneratorRegression");
 
-        GeneratorDriver driver = CSharpGeneratorDriver.Create(
-            new ReadonlyDbContextGenerator.ReadOnlyDbContextGenerator().AsSourceGenerator());
-        driver = driver.RunGenerators(compilation);
-
-        var generatedSources = driver.GetRunResult().Results.Single().GeneratedSources;
+        var generatedSources = runResult.GeneratedSources;
         var salesCustomers = generatedSources.Where(result => result.HintName.StartsWith("Sales_ReadOnlyCustomer_Sales_", StringComparison.Ordinal)).ToArray();
         var supportCustomer = Assert.Single(generatedSources.Where(result => result.HintName == "Support_ReadOnlyCustomer_Support.g.cs"));
         var context = Assert.Single(generatedSources.Where(result => result.HintName == "ReadOnlyApplicationContext.g.cs"));
@@ -138,27 +117,15 @@ public class ReadonlyDbContextGeneratorTests
                 {
                     public void Configure(EntityTypeBuilder<Sample.Entities.Widget> builder)
                     {
-                        builder.HasFilter($"{nameof(Sample.Entities.Widget.Id)} IS NOT NULL");
+                        builder.ToTable($"{nameof(Sample.Entities.Widget.Id)}_table");
                     }
                 }
             }
             """;
 
-        var compilation = CSharpCompilation.Create(
-            assemblyName: "FullyQualifiedConfigurationRegression",
-            syntaxTrees: [CSharpSyntaxTree.ParseText(source)],
-            references:
-            [
-                MetadataReference.CreateFromFile(typeof(object).Assembly.Location),
-                MetadataReference.CreateFromFile(typeof(DbContext).Assembly.Location)
-            ],
-            options: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+        var runResult = GeneratorHarness.RunAndAssertCompiles(source, "FullyQualifiedConfigurationRegression");
 
-        GeneratorDriver driver = CSharpGeneratorDriver.Create(
-            new ReadonlyDbContextGenerator.ReadOnlyDbContextGenerator().AsSourceGenerator());
-        driver = driver.RunGenerators(compilation);
-
-        var generatedConfiguration = Assert.Single(driver.GetRunResult().Results.Single().GeneratedSources,
+        var generatedConfiguration = Assert.Single(runResult.GeneratedSources,
             sourceResult => sourceResult.SourceText.ToString().Contains("class ReadOnlyWidgetConfiguration", StringComparison.Ordinal));
         var generatedSource = generatedConfiguration.SourceText.ToString();
 
@@ -208,21 +175,9 @@ public class ReadonlyDbContextGeneratorTests
             }
             """;
 
-        var compilation = CSharpCompilation.Create(
-            assemblyName: "EntityConfigReferenceRegression",
-            syntaxTrees: [CSharpSyntaxTree.ParseText(source)],
-            references:
-            [
-                MetadataReference.CreateFromFile(typeof(object).Assembly.Location),
-                MetadataReference.CreateFromFile(typeof(DbContext).Assembly.Location)
-            ],
-            options: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+        var runResult = GeneratorHarness.RunAndAssertCompiles(source, "EntityConfigReferenceRegression");
 
-        GeneratorDriver driver = CSharpGeneratorDriver.Create(
-            new ReadonlyDbContextGenerator.ReadOnlyDbContextGenerator().AsSourceGenerator());
-        driver = driver.RunGenerators(compilation);
-
-        var generatedDbContext = Assert.Single(driver.GetRunResult().Results.Single().GeneratedSources,
+        var generatedDbContext = Assert.Single(runResult.GeneratedSources,
             sourceResult => sourceResult.SourceText.ToString().Contains("class ReadOnlyApplicationContext", StringComparison.Ordinal));
         var generatedSource = generatedDbContext.SourceText.ToString();
 

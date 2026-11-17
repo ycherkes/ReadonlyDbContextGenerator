@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## v0.2.4
+- Fixed the explicit `IReadOnly…DbContext` property implementations keeping the original property initializer. `public DbSet<X> Xs { get; set; } = null!;` generated `IQueryable<ReadOnlyX> IReadOnlyContext.Xs => Xs = null!;`, so reading the property through the interface replaced the `DbSet` with `null`.
+- Fixed generator crashes (`InvalidCastException`) for nullable (`DbSet<X>?`) and fully qualified (`Microsoft.EntityFrameworkCore.DbSet<X>`) `DbSet` properties.
+- Fixed a generated interface that did not compile for expression-bodied `DbSet` properties (`public DbSet<X> Xs => Set<X>();`).
+- Fixed contexts declared in the global namespace generating an invalid `namespace <global namespace>.Generated`.
+- The generated interface and its explicit implementation are now built from a single list of queryable sets, so they can no longer drift apart.
+- Made generator implementation types `internal`. Removed dead code. The package is no longer packed on every build.
+- Tests: the new `GeneratorHarness` compiles the generated output against the full EF Core reference set and fails on any error or generator crash.
+
 ## v0.2.3
 - Fixed generated readonly `DbContext` classes calling the original (non-readonly) `IEntityTypeConfiguration<T>` classes instead of their generated readonly counterparts (e.g. `new FooEntityConfig()` instead of `new ReadOnlyFooEntityConfig()`). This caused readonly entities to be left without their EF Core relationship/index configuration, leading to `InvalidOperationException: Unable to determine the relationship...` at runtime whenever an entity configuration class was referenced by name inside `OnModelCreating` (directly or via a helper method).
 
