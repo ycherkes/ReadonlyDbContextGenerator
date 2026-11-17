@@ -41,6 +41,68 @@ public class DbSetShapeTests
         AssertContains("IQueryable<ReadOnlyWidget> Widgets { get; }", contextInterface);
     }
 
+    [Fact]
+    public void EscapesKeywordDbSetPropertyNames()
+    {
+        var source = """
+            using Microsoft.EntityFrameworkCore;
+
+            namespace Sample
+            {
+                public class Widget
+                {
+                    public int Id { get; set; }
+                }
+
+                public class ApplicationContext : DbContext
+                {
+                    public DbSet<Widget> @event { get; set; } = null!;
+                }
+            }
+            """;
+
+        var result = GeneratorHarness.RunAndAssertCompiles(source);
+
+        var context = Assert.Single(result.GeneratedSources, s => s.HintName == "ReadOnlyApplicationContext.g.cs").SourceText.ToString();
+        var contextInterface = Assert.Single(result.GeneratedSources, s => s.HintName == "IReadOnlyApplicationContext.g.cs").SourceText.ToString();
+
+        AssertContains("IQueryable<ReadOnlyWidget> IReadOnlyApplicationContext.@event => @event;", context);
+        AssertContains("IQueryable<ReadOnlyWidget> @event { get; }", contextInterface);
+    }
+
+    [Fact]
+    public void IncludesDbSetsDeclaredInAnotherPartialDeclaration()
+    {
+        var source = """
+            using Microsoft.EntityFrameworkCore;
+
+            namespace Sample
+            {
+                public class Widget
+                {
+                    public int Id { get; set; }
+                }
+
+                public partial class ApplicationContext : DbContext
+                {
+                }
+
+                public partial class ApplicationContext
+                {
+                    public DbSet<Widget> Widgets { get; set; } = null!;
+                }
+            }
+            """;
+
+        var result = GeneratorHarness.RunAndAssertCompiles(source);
+
+        var context = Assert.Single(result.GeneratedSources, s => s.HintName == "ReadOnlyApplicationContext.g.cs").SourceText.ToString();
+        var contextInterface = Assert.Single(result.GeneratedSources, s => s.HintName == "IReadOnlyApplicationContext.g.cs").SourceText.ToString();
+
+        AssertContains("IQueryable<ReadOnlyWidget> IReadOnlyApplicationContext.Widgets => Widgets;", context);
+        AssertContains("IQueryable<ReadOnlyWidget> Widgets { get; }", contextInterface);
+    }
+
     private static void AssertContains(string expected, string actual)
     {
         if (!actual.Contains(expected, StringComparison.Ordinal))

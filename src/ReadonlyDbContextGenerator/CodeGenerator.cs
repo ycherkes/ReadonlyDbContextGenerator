@@ -83,8 +83,17 @@ internal static class CodeGenerator
     {
         return dbContext.Entities
             .Where(entity => !string.IsNullOrEmpty(entity.DbSetProperty))
-            .Select(entity => new QueryableSet(entity.DbSetProperty, GetReadonlyTypeName(entity.Type, generatedTypeNames)))
+            .Select(entity => new QueryableSet(EscapeIdentifier(entity.DbSetProperty), GetReadonlyTypeName(entity.Type, generatedTypeNames)))
             .ToList();
+    }
+
+    /// <summary>
+    /// Symbol names come without the verbatim prefix, so a property declared as <c>@event</c>
+    /// is reported as <c>event</c>. Restore the prefix before interpolating it into source text.
+    /// </summary>
+    private static string EscapeIdentifier(string name)
+    {
+        return SyntaxFacts.GetKeywordKind(name) != SyntaxKind.None ? "@" + name : name;
     }
 
     private readonly struct QueryableSet(string propertyName, string elementTypeName)
@@ -891,11 +900,19 @@ internal static class CodeGenerator
 
         var newDbContextSyntax = (ClassDeclarationSyntax)typeReferenceRewriter.Visit(dbContextSyntax);
 
+        // DbSets and other members may live in other partial declarations of the context
+        // (only the one with the base list is discovered as the context syntax), so copy those too.
+        var otherDeclarations = GetOtherPartialDeclarations(dbContext.TypeSymbol, dbContextSyntax);
+        var otherMembers = otherDeclarations
+            .Select(declaration => (ClassDeclarationSyntax)new TypeReferenceRewriter(types, compilation.GetSemanticModel(declaration.SyntaxTree)).Visit(declaration))
+            .SelectMany(declaration => declaration.Members);
+        newDbContextSyntax = newDbContextSyntax.WithMembers(newDbContextSyntax.Members.AddRange(otherMembers));
+
         var externalDbSetNames = new HashSet<string>(dbContext.ExternalEntities.Select(e => e.DbSetProperty), StringComparer.Ordinal);
 
         var withoutSaveMethods = newDbContextSyntax.Members
             .Where(member => member is not MethodDeclarationSyntax { Identifier.Text: "SaveChanges" or "SaveChangesAsync" })
-            .Where(member => member is not PropertyDeclarationSyntax prop || !externalDbSetNames.Contains(prop.Identifier.Text));
+            .Where(member => member is not PropertyDeclarationSyntax prop || !externalDbSetNames.Contains(prop.Identifier.ValueText));
 
         var newMethods = ReadonlyDbContextMethods;
 
@@ -920,7 +937,17 @@ internal static class CodeGenerator
             .WithBaseList(newBaseList);
 
         string[] requiredUsings = ["Microsoft.EntityFrameworkCore", "System.Threading", "System.Threading.Tasks", "System", "System.Linq"];
-        var combinedUsings = CombineUsings(dbContextSyntax, requiredUsings).ToArray();
+        var combinedUsings = CombineUsings(dbContextSyntax, requiredUsings);
+        foreach (var declaration in otherDeclarations)
+        {
+            combinedUsings.AddRange(CombineUsings(declaration, []));
+        }
+
+        var distinctUsings = combinedUsings
+            .GroupBy(u => u.WithoutTrivia().NormalizeWhitespace().ToFullString(), StringComparer.Ordinal)
+            .Select(g => g.First())
+            .OrderBy(u => u.Name?.ToString(), StringComparer.Ordinal)
+            .ToArray();
 
         var namespaceDeclaration = SyntaxFactory.NamespaceDeclaration(SyntaxFactory.ParseName(commonNamespace))
             .WithTrailingTrivia(SyntaxFactory.CarriageReturnLineFeed)
@@ -928,10 +955,19 @@ internal static class CodeGenerator
             .NormalizeWhitespace();
 
         var compilationUnit = SyntaxFactory.CompilationUnit()
-            .AddUsings(combinedUsings)
+            .AddUsings(distinctUsings)
             .AddMembers(namespaceDeclaration);
 
         return compilationUnit;
+    }
+
+    private static IReadOnlyList<ClassDeclarationSyntax> GetOtherPartialDeclarations(INamedTypeSymbol typeSymbol, ClassDeclarationSyntax primaryDeclaration)
+    {
+        return typeSymbol.DeclaringSyntaxReferences
+            .Select(reference => reference.GetSyntax())
+            .OfType<ClassDeclarationSyntax>()
+            .Where(declaration => declaration.SyntaxTree != primaryDeclaration.SyntaxTree || declaration.Span != primaryDeclaration.Span)
+            .ToList();
     }
 
     private static ClassDeclarationSyntax AddPartialKeyword(ClassDeclarationSyntax classDeclaration)
