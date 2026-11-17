@@ -7,7 +7,7 @@ All notable changes to this project will be documented in this file.
 - Fixed generator crashes (`InvalidCastException`) for nullable (`DbSet<X>?`) and fully qualified (`Microsoft.EntityFrameworkCore.DbSet<X>`) `DbSet` properties.
 - Fixed contexts declared in the global namespace generating an invalid `namespace <global namespace>.Generated`.
 - Fixed `DbSet` properties with keyword names (`@event`) generating invalid interface members.
-- Fixed `DbSet` properties declared in a different partial declaration of the context than its base list: they are now copied to the generated context, together with that file's usings.
+- Fixed `DbSet` properties declared in a different partial declaration of the context than its base list: each additional partial declaration is now generated as its own partial file of the readonly context, keeping its usings and aliases scoped to it.
 - The generated interface and its explicit implementation are now built from a single list of queryable sets, so they can no longer drift apart.
 - Made generator implementation types `internal`. Removed dead code. The package is no longer packed on every build.
 - Tests: the new `GeneratorHarness` compiles the generated output against the full EF Core reference set and fails on any error or generator crash.

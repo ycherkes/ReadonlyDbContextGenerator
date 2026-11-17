@@ -30,9 +30,15 @@ internal static class GeneratorHarness
     /// <summary>
     /// Runs the generator, asserts it reported no error diagnostics and that the output compiles.
     /// </summary>
-    public static GeneratorRunResult RunAndAssertCompiles(string source, string assemblyName = "GeneratorTest")
+    public static GeneratorRunResult RunAndAssertCompiles(string source, string assemblyName = "GeneratorTest") =>
+        RunAndAssertCompiles([source], assemblyName);
+
+    /// <summary>
+    /// Same as <see cref="RunAndAssertCompiles(string, string)"/>, with each source in its own file.
+    /// </summary>
+    public static GeneratorRunResult RunAndAssertCompiles(string[] sources, string assemblyName = "GeneratorTest")
     {
-        var compilation = CreateCompilation(assemblyName, Parse(source));
+        var compilation = CreateCompilation(assemblyName, sources.Select(Parse).ToArray());
         AssertNoErrors(compilation.GetDiagnostics(), "input source");
 
         var driver = CreateDriver().RunGeneratorsAndUpdateCompilation(compilation, out var outputCompilation, out var generatorDiagnostics);

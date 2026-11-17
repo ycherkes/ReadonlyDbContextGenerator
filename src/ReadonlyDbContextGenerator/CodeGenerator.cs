@@ -68,6 +68,15 @@ internal static class CodeGenerator
             var readOnlyDbContextCode = ModifyDbContextSyntax(dbContext, dbContext.SyntaxNode!, info.Compilation, commonNamespace, generatedTypeNames, queryableSets);
             context.AddSource($"{readonlyDbContextName}.g.cs", readOnlyDbContextCode.NormalizeWhitespace(eol: Environment.NewLine).ToFullString());
 
+            // Other partial declarations get their own files: usings (and aliases) are scoped to a file,
+            // so merging them into one compilation unit could change or break their meaning.
+            var otherDeclarations = GetOtherPartialDeclarations(dbContext.TypeSymbol, dbContext.SyntaxNode!);
+            for (var i = 0; i < otherDeclarations.Count; i++)
+            {
+                var partCode = GenerateDbContextPartSyntax(dbContext, otherDeclarations[i], info.Compilation, commonNamespace, generatedTypeNames);
+                context.AddSource($"{readonlyDbContextName}.{i + 1}.g.cs", partCode.NormalizeWhitespace(eol: Environment.NewLine).ToFullString());
+            }
+
             var readOnlyInterfaceCode = GenerateReadOnlyDbContextInterface(readonlyDbContextName, dbContext, commonNamespace, queryableSets);
             context.AddSource($"I{readonlyDbContextName}.g.cs", readOnlyInterfaceCode);
         }
@@ -900,19 +909,7 @@ internal static class CodeGenerator
 
         var newDbContextSyntax = (ClassDeclarationSyntax)typeReferenceRewriter.Visit(dbContextSyntax);
 
-        // DbSets and other members may live in other partial declarations of the context
-        // (only the one with the base list is discovered as the context syntax), so copy those too.
-        var otherDeclarations = GetOtherPartialDeclarations(dbContext.TypeSymbol, dbContextSyntax);
-        var otherMembers = otherDeclarations
-            .Select(declaration => (ClassDeclarationSyntax)new TypeReferenceRewriter(types, compilation.GetSemanticModel(declaration.SyntaxTree)).Visit(declaration))
-            .SelectMany(declaration => declaration.Members);
-        newDbContextSyntax = newDbContextSyntax.WithMembers(newDbContextSyntax.Members.AddRange(otherMembers));
-
-        var externalDbSetNames = new HashSet<string>(dbContext.ExternalEntities.Select(e => e.DbSetProperty), StringComparer.Ordinal);
-
-        var withoutSaveMethods = newDbContextSyntax.Members
-            .Where(member => member is not MethodDeclarationSyntax { Identifier.Text: "SaveChanges" or "SaveChangesAsync" })
-            .Where(member => member is not PropertyDeclarationSyntax prop || !externalDbSetNames.Contains(prop.Identifier.ValueText));
+        var withoutSaveMethods = GetCopiedContextMembers(dbContext, newDbContextSyntax);
 
         var newMethods = ReadonlyDbContextMethods;
 
@@ -937,17 +934,7 @@ internal static class CodeGenerator
             .WithBaseList(newBaseList);
 
         string[] requiredUsings = ["Microsoft.EntityFrameworkCore", "System.Threading", "System.Threading.Tasks", "System", "System.Linq"];
-        var combinedUsings = CombineUsings(dbContextSyntax, requiredUsings);
-        foreach (var declaration in otherDeclarations)
-        {
-            combinedUsings.AddRange(CombineUsings(declaration, []));
-        }
-
-        var distinctUsings = combinedUsings
-            .GroupBy(u => u.WithoutTrivia().NormalizeWhitespace().ToFullString(), StringComparer.Ordinal)
-            .Select(g => g.First())
-            .OrderBy(u => u.Name?.ToString(), StringComparer.Ordinal)
-            .ToArray();
+        var combinedUsings = CombineUsings(dbContextSyntax, requiredUsings).ToArray();
 
         var namespaceDeclaration = SyntaxFactory.NamespaceDeclaration(SyntaxFactory.ParseName(commonNamespace))
             .WithTrailingTrivia(SyntaxFactory.CarriageReturnLineFeed)
@@ -955,10 +942,46 @@ internal static class CodeGenerator
             .NormalizeWhitespace();
 
         var compilationUnit = SyntaxFactory.CompilationUnit()
-            .AddUsings(distinctUsings)
+            .AddUsings(combinedUsings)
             .AddMembers(namespaceDeclaration);
 
         return compilationUnit;
+    }
+
+    /// <summary>
+    /// Generates a partial declaration of the readonly context from another partial declaration
+    /// of the original context (one that is not the discovered declaration with the base list).
+    /// </summary>
+    private static CompilationUnitSyntax GenerateDbContextPartSyntax(DbContextInfo dbContext,
+        ClassDeclarationSyntax declaration, Compilation compilation, string commonNamespace,
+        IReadOnlyDictionary<ITypeSymbol, string> types)
+    {
+        var rewriter = new TypeReferenceRewriter(types, compilation.GetSemanticModel(declaration.SyntaxTree));
+        var rewritten = (ClassDeclarationSyntax)rewriter.Visit(declaration);
+
+        var part = AddPartialKeyword(rewritten)
+            .WithIdentifier(SyntaxFactory.Identifier(GetReadonlyTypeName(dbContext.TypeSymbol, types)))
+            .WithMembers(SyntaxFactory.List(GetCopiedContextMembers(dbContext, rewritten)));
+
+        var namespaceDeclaration = SyntaxFactory.NamespaceDeclaration(SyntaxFactory.ParseName(commonNamespace))
+            .AddMembers(part);
+
+        return SyntaxFactory.CompilationUnit()
+            .AddUsings(CombineUsings(declaration, ["Microsoft.EntityFrameworkCore"]).ToArray())
+            .AddMembers(namespaceDeclaration);
+    }
+
+    /// <summary>
+    /// Members of an original context declaration that are copied to the readonly context:
+    /// everything except the SaveChanges overloads (replaced by throwing ones) and DbSets of external entities.
+    /// </summary>
+    private static IEnumerable<MemberDeclarationSyntax> GetCopiedContextMembers(DbContextInfo dbContext, ClassDeclarationSyntax declaration)
+    {
+        var externalDbSetNames = new HashSet<string>(dbContext.ExternalEntities.Select(e => e.DbSetProperty), StringComparer.Ordinal);
+
+        return declaration.Members
+            .Where(member => member is not MethodDeclarationSyntax { Identifier.Text: "SaveChanges" or "SaveChangesAsync" })
+            .Where(member => member is not PropertyDeclarationSyntax prop || !externalDbSetNames.Contains(prop.Identifier.ValueText));
     }
 
     private static IReadOnlyList<ClassDeclarationSyntax> GetOtherPartialDeclarations(INamedTypeSymbol typeSymbol, ClassDeclarationSyntax primaryDeclaration)

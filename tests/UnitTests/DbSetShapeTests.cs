@@ -103,6 +103,44 @@ public class DbSetShapeTests
         AssertContains("IQueryable<ReadOnlyWidget> Widgets { get; }", contextInterface);
     }
 
+    [Fact]
+    public void KeepsUsingAliasesScopedToTheirPartialContextFile()
+    {
+        var first = """
+            using Microsoft.EntityFrameworkCore;
+            using Value = System.Int32;
+
+            namespace Sample
+            {
+                public class Widget
+                {
+                    public int Id { get; set; }
+                }
+
+                public partial class ApplicationContext : DbContext
+                {
+                    public DbSet<Widget> Widgets { get; set; } = null!;
+
+                    public Value Number => 1;
+                }
+            }
+            """;
+
+        var second = """
+            using Value = System.String;
+
+            namespace Sample
+            {
+                public partial class ApplicationContext
+                {
+                    public Value Text => "text";
+                }
+            }
+            """;
+
+        GeneratorHarness.RunAndAssertCompiles([first, second]);
+    }
+
     private static void AssertContains(string expected, string actual)
     {
         if (!actual.Contains(expected, StringComparison.Ordinal))
