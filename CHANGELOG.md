@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## v0.2.8
+- Fixed namespace-scoped using directives being dropped from additional partial `DbContext` declarations, preserving aliases, namespace imports, and static imports in both block-scoped and file-scoped namespaces.
+- Added compilation regression tests for namespace-scoped imports and aliases that shadow compilation-unit aliases.
+
 ## v0.2.7
 - Fixed the explicit `IReadOnly…DbContext` property implementations keeping the original property initializer. `public DbSet<X> Xs { get; set; } = null!;` generated `IQueryable<ReadOnlyX> IReadOnlyContext.Xs => Xs = null!;`, so reading the property through the interface replaced the `DbSet` with `null`.
 - Fixed generator crashes (`InvalidCastException`) for nullable (`DbSet<X>?`) and fully qualified (`Microsoft.EntityFrameworkCore.DbSet<X>`) `DbSet` properties.

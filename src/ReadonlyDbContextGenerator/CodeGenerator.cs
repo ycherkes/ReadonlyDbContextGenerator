@@ -964,6 +964,9 @@ internal static class CodeGenerator
             .WithMembers(SyntaxFactory.List(GetCopiedContextMembers(dbContext, rewritten)));
 
         var namespaceDeclaration = SyntaxFactory.NamespaceDeclaration(SyntaxFactory.ParseName(commonNamespace))
+            // Namespace-scoped imports belong with this partial declaration too. Keeping them
+            // inside the namespace preserves alias shadowing of compilation-unit imports.
+            .WithUsings(GetNamespace(declaration)?.Usings ?? default)
             .AddMembers(part);
 
         return SyntaxFactory.CompilationUnit()

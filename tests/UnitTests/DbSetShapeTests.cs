@@ -141,6 +141,64 @@ public class DbSetShapeTests
         GeneratorHarness.RunAndAssertCompiles([first, second]);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void KeepsNamespaceScopedImportsInAdditionalPartialContextFiles(bool fileScopedNamespace)
+    {
+        var first = """
+            using Microsoft.EntityFrameworkCore;
+
+            namespace Sample
+            {
+                public class Widget
+                {
+                    public int Id { get; set; }
+                }
+
+                public partial class ApplicationContext : DbContext
+                {
+                    public DbSet<Widget> Widgets { get; set; } = null!;
+                }
+            }
+            """;
+
+        var second = fileScopedNamespace ? """
+            using Value = System.Int32;
+
+            namespace Sample;
+
+            using Value = System.String;
+            using System.Text;
+            using static System.Math;
+
+            public partial class ApplicationContext
+            {
+                public Value Text => "text";
+                public StringBuilder Buffer => new StringBuilder();
+                public double Number => Sqrt(4);
+            }
+            """ : """
+            using Value = System.Int32;
+
+            namespace Sample
+            {
+                using Value = System.String;
+                using System.Text;
+                using static System.Math;
+
+                public partial class ApplicationContext
+                {
+                    public Value Text => "text";
+                    public StringBuilder Buffer => new StringBuilder();
+                    public double Number => Sqrt(4);
+                }
+            }
+            """;
+
+        GeneratorHarness.RunAndAssertCompiles([first, second]);
+    }
+
     private static void AssertContains(string expected, string actual)
     {
         if (!actual.Contains(expected, StringComparison.Ordinal))
