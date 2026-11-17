@@ -956,7 +956,8 @@ internal static class CodeGenerator
         ClassDeclarationSyntax declaration, Compilation compilation, string commonNamespace,
         IReadOnlyDictionary<ITypeSymbol, string> types)
     {
-        var rewriter = new TypeReferenceRewriter(types, compilation.GetSemanticModel(declaration.SyntaxTree));
+        var semanticModel = compilation.GetSemanticModel(declaration.SyntaxTree);
+        var rewriter = new TypeReferenceRewriter(types, semanticModel);
         var rewritten = (ClassDeclarationSyntax)rewriter.Visit(declaration);
 
         var part = AddPartialKeyword(rewritten)
@@ -964,14 +965,28 @@ internal static class CodeGenerator
             .WithMembers(SyntaxFactory.List(GetCopiedContextMembers(dbContext, rewritten)));
 
         var namespaceDeclaration = SyntaxFactory.NamespaceDeclaration(SyntaxFactory.ParseName(commonNamespace))
-            // Namespace-scoped imports belong with this partial declaration too. Keeping them
-            // inside the namespace preserves alias shadowing of compilation-unit imports.
-            .WithUsings(GetNamespace(declaration)?.Usings ?? default)
+            // Keep alias shadowing, but resolve relative targets before relocating the namespace.
+            .WithUsings(SyntaxFactory.List((GetNamespace(declaration)?.Usings ?? default)
+                .Select(directive => QualifyUsingDirective(directive, semanticModel))))
             .AddMembers(part);
 
         return SyntaxFactory.CompilationUnit()
             .AddUsings(CombineUsings(declaration, ["Microsoft.EntityFrameworkCore"]).ToArray())
             .AddMembers(namespaceDeclaration);
+    }
+
+    private static UsingDirectiveSyntax QualifyUsingDirective(UsingDirectiveSyntax directive, SemanticModel semanticModel)
+    {
+        if (directive.Name == null || semanticModel.GetSymbolInfo(directive.Name).Symbol is not INamespaceOrTypeSymbol target)
+        {
+            return directive;
+        }
+
+        // Alias targets must use System.String/System.Int32 rather than predefined type keywords.
+        var format = SymbolDisplayFormat.FullyQualifiedFormat
+            .WithMiscellaneousOptions(SymbolDisplayMiscellaneousOptions.EscapeKeywordIdentifiers);
+        var qualifiedName = SyntaxFactory.ParseName(target.ToDisplayString(format)).WithTriviaFrom(directive.Name);
+        return directive.WithName(qualifiedName);
     }
 
     /// <summary>
