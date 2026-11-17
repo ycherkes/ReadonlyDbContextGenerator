@@ -4,7 +4,7 @@ namespace ReadonlyDbContextGenerator.Diagnostics;
 
 // Borrowed from: https://github.com/themidnightgospel/Imposter
 
-public static class DiagnosticDescriptors
+internal static class DiagnosticDescriptors
 {
     private const string CrashIssueUrl =
         "https://github.com/ycherkes/ReadonlyDbContextGenerator/issues/new?labels=bug&title=Generator%20crash:%20RDCTX002";

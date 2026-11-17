@@ -4,9 +4,7 @@
 		<Copyright>Yevhen Cherkes 2024 - $([System.DateTime]::Now.Year)</Copyright>
 		<DevelopmentDependency>true</DevelopmentDependency>
 		<Description>Creates read-only twins of EF Core DbContext and entities.</Description>
-		<EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>
 		<EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
-		<GeneratePackageOnBuild>true</GeneratePackageOnBuild>
 		<IncludeBuildOutput>false</IncludeBuildOutput>
 		<IsRoslynComponent>true</IsRoslynComponent>
 		<LangVersion>latest</LangVersion>
@@ -19,7 +17,7 @@
 		<RepositoryUrl>https://github.com/ycherkes/ReadonlyDbContextGenerator</RepositoryUrl>
 		<TargetFramework>netstandard2.0</TargetFramework>
 		<Title>Readonly DbContext Generator</Title>
-		<Version>0.2.6</Version>
+		<Version>0.2.7</Version>
 		<SuppressDependenciesWhenPacking>true</SuppressDependenciesWhenPacking>
 	</PropertyGroup>
 
